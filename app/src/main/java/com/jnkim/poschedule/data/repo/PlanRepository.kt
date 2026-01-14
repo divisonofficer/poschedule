@@ -104,4 +104,62 @@ class PlanRepository @Inject constructor(
         )
         planDao.insertPlanItem(item)
     }
+
+    /**
+     * Creates a one-time event with specific date and time.
+     * Unlike recurring plans, this creates a single plan item without a series.
+     *
+     * @param title Event title
+     * @param date Date in ISO format (yyyy-MM-dd)
+     * @param startHour Hour of day (0-23)
+     * @param startMinute Minute of hour (0-59)
+     * @param durationMinutes Duration in minutes
+     */
+    suspend fun addOneTimeEvent(
+        title: String,
+        date: String,
+        startHour: Int,
+        startMinute: Int,
+        durationMinutes: Int
+    ) {
+        // Build timestamps using local timezone
+        val localDate = java.time.LocalDate.parse(date)
+        val startTime = java.time.LocalTime.of(startHour, startMinute)
+        val endTime = startTime.plusMinutes(durationMinutes.toLong())
+
+        val zoneId = java.time.ZoneId.systemDefault()
+        val startDateTime = java.time.LocalDateTime.of(localDate, startTime)
+        val endDateTime = java.time.LocalDateTime.of(localDate, endTime)
+
+        val startMillis = startDateTime.atZone(zoneId).toInstant().toEpochMilli()
+        val endMillis = endDateTime.atZone(zoneId).toInstant().toEpochMilli()
+
+        val item = PlanItemEntity(
+            id = UUID.randomUUID().toString(),
+            date = date,
+            title = title,
+            type = null,
+            source = PlanItemSource.MANUAL,
+            window = PlanItemWindow.MIDDAY, // Use MIDDAY as default for one-time events
+            status = "PENDING",
+            isCore = false,
+            startTimeMillis = startMillis,
+            endTimeMillis = endMillis,
+            seriesId = null // One-time events have no series
+        )
+        planDao.insertPlanItem(item)
+    }
+
+    // --- Widget Support ---
+    /**
+     * Get the next pending task for widget display.
+     * Returns the earliest pending task that hasn't been snoozed or has expired snooze.
+     *
+     * @param date Date to query in ISO format (yyyy-MM-dd)
+     * @return Next pending task or null if no tasks are pending
+     */
+    suspend fun getNextPendingTask(date: String): PlanItemEntity? {
+        val now = System.currentTimeMillis()
+        return planDao.getNextPendingTask(date, now)
+    }
 }

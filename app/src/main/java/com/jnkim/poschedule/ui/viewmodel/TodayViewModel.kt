@@ -9,6 +9,7 @@ import com.jnkim.poschedule.data.repo.UserSettings
 import com.jnkim.poschedule.domain.ai.GentleCopyRequest
 import com.jnkim.poschedule.domain.ai.GentleCopyUseCase
 import com.jnkim.poschedule.domain.engine.ModeStateMachine
+import com.jnkim.poschedule.domain.engine.RecurrenceEngine
 import com.jnkim.poschedule.domain.model.Mode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -35,7 +36,8 @@ class TodayViewModel @Inject constructor(
     private val planRepository: PlanRepository,
     private val settingsRepository: SettingsRepository,
     private val gentleCopyUseCase: GentleCopyUseCase,
-    private val modeStateMachine: ModeStateMachine
+    private val modeStateMachine: ModeStateMachine,
+    private val recurrenceEngine: RecurrenceEngine
 ) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE))
@@ -144,7 +146,11 @@ class TodayViewModel @Inject constructor(
 
     fun snoozeItem(id: String) {
         viewModelScope.launch {
-            planRepository.updateItemStatus(id, "SNOOZED")
+            // Snooze for 15 minutes from now
+            val snoozeUntil = java.time.Instant.now()
+                .plus(15, java.time.temporal.ChronoUnit.MINUTES)
+                .toEpochMilli()
+            planRepository.updateItemWithSnooze(id, "SNOOZED", snoozeUntil)
             evaluateCurrentMode()
         }
     }
@@ -204,12 +210,56 @@ class TodayViewModel @Inject constructor(
                 archived = false
             )
             planRepository.addSeries(series)
+
+            // Immediately expand the series for today and surrounding dates
+            // This ensures the plan items appear in the UI right away
+            expandSeriesForCurrentWeek(series)
+            refreshSystemMessage()
+        }
+    }
+
+    /**
+     * Expands a newly created series for the current week to make it appear immediately.
+     * Matches the expansion range used in DailyPlanWorker (-1 to +7 days).
+     */
+    private suspend fun expandSeriesForCurrentWeek(series: PlanSeriesEntity) {
+        val today = LocalDate.now()
+        for (offset in -1..7) {
+            val targetDate = today.plusDays(offset.toLong())
+            val dateStr = targetDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
+
+            // Ensure PlanDay exists for the date
+            if (planRepository.getPlanDay(dateStr) == null) {
+                planRepository.insertPlanDay(dateStr, Mode.NORMAL)
+            }
+
+            // Expand the series and insert the plan item
+            recurrenceEngine.expand(series, targetDate)?.let { instance ->
+                planRepository.insertPlanItem(instance)
+            }
         }
     }
 
     fun deletePlanItem(id: String) {
         viewModelScope.launch {
             planRepository.deleteItem(id)
+            refreshSystemMessage()
+        }
+    }
+
+    /**
+     * Creates a one-time event (non-recurring plan) for a specific date and time.
+     * Unlike recurring plans, this creates a single PlanItemEntity directly without a series.
+     *
+     * @param title Event title (e.g., "Dinner with John")
+     * @param date Date in ISO format (yyyy-MM-dd)
+     * @param startHour Hour of day (0-23)
+     * @param startMinute Minute of hour (0-59)
+     * @param durationMinutes Duration in minutes
+     */
+    fun addOneTimeEvent(title: String, date: String, startHour: Int, startMinute: Int, durationMinutes: Int) {
+        viewModelScope.launch {
+            planRepository.addOneTimeEvent(title, date, startHour, startMinute, durationMinutes)
             refreshSystemMessage()
         }
     }

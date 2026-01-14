@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -25,6 +26,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -38,17 +42,24 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.jnkim.poschedule.R
 import com.jnkim.poschedule.data.local.entity.*
+import com.jnkim.poschedule.data.repo.SettingsRepository
+import com.jnkim.poschedule.domain.model.DayPhase
 import com.jnkim.poschedule.domain.model.Mode
 import com.jnkim.poschedule.domain.model.RoutineType
+import com.jnkim.poschedule.domain.model.WeatherState
 import com.jnkim.poschedule.ui.components.*
 import com.jnkim.poschedule.ui.theme.*
 import com.jnkim.poschedule.ui.viewmodel.TodayUiState
@@ -66,13 +77,41 @@ enum class CalendarZoom {
     DAY, WEEK, MONTH
 }
 
+/**
+ * Returns an icon representing the current day phase.
+ */
+private fun getDayPhaseIcon(phase: DayPhase): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (phase) {
+        DayPhase.DAWN -> Icons.Default.WbTwilight      // 새벽 - 황혼 아이콘
+        DayPhase.MORNING -> Icons.Default.WbSunny      // 아침 - 해
+        DayPhase.NOON -> Icons.Default.LightMode       // 낮 - 밝은 태양
+        DayPhase.AFTERNOON -> Icons.Default.WbSunny    // 오후 - 해
+        DayPhase.EVENING -> Icons.Default.WbTwilight   // 저녁 - 황혼
+        DayPhase.NIGHT -> Icons.Default.Nightlight     // 밤 - 달
+    }
+}
+
+/**
+ * Returns an icon representing the weather state.
+ */
+private fun getWeatherIcon(weather: WeatherState): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (weather) {
+        WeatherState.CLEAR -> Icons.Default.WbSunny       // 맑음
+        WeatherState.CLOUDY -> Icons.Default.Cloud        // 흐림
+        WeatherState.RAIN -> Icons.Default.WaterDrop      // 비
+        WeatherState.SNOW -> Icons.Default.AcUnit         // 눈
+    }
+}
+
 @Composable
 fun TodayScreen(
     viewModel: TodayViewModel,
+    settingsRepository: SettingsRepository,
     onNavigateToSettings: () -> Unit,
     onNavigateToTidySnap: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val settings by settingsRepository.settingsFlow.collectAsState(initial = null)
     var showAddSheet by remember { mutableStateOf(false) }
     var selectedDate by remember { mutableStateOf<LocalDate>(LocalDate.now()) }
     var zoomLevel by remember { mutableStateOf<CalendarZoom>(CalendarZoom.DAY) }
@@ -84,6 +123,7 @@ fun TodayScreen(
 
     TodayContent(
         uiState = uiState,
+        settings = settings,
         selectedDate = selectedDate,
         zoomLevel = zoomLevel,
         onZoomChange = { zoomLevel = it },
@@ -100,8 +140,12 @@ fun TodayScreen(
     if (showAddSheet) {
         PlanEditorSheet(
             onDismiss = { showAddSheet = false },
-            onSave = { title, planType, anchor, frequency, isCore, start, end, byDays ->
+            onSaveRecurring = { title, planType, anchor, frequency, isCore, start, end, byDays ->
                 viewModel.addPlanSeries(title, planType, anchor, frequency, isCore, start, end, byDays)
+                showAddSheet = false
+            },
+            onSaveOneTime = { title, date, startHour, startMinute, durationMinutes ->
+                viewModel.addOneTimeEvent(title, date, startHour, startMinute, durationMinutes)
                 showAddSheet = false
             }
         )
@@ -128,6 +172,7 @@ fun TodayScreen(
 @Composable
 fun TodayContent(
     uiState: TodayUiState,
+    settings: com.jnkim.poschedule.data.repo.UserSettings?,
     selectedDate: LocalDate,
     zoomLevel: CalendarZoom,
     onZoomChange: (CalendarZoom) -> Unit,
@@ -153,16 +198,19 @@ fun TodayContent(
 
     val listState = rememberLazyListState()
 
+    // Track animation state to prevent gesture conflicts
+    var isAnimating by remember { mutableStateOf(false) }
+
     // Track drag state for manual gestures
     var dragOffset by remember { mutableStateOf(0f) }
     val dragThreshold = 100f
 
     // NestedScrollConnection to intercept scroll gestures when Week/Month view is open
-    val nestedScrollConnection = remember(zoomLevel) {
+    val nestedScrollConnection = remember(zoomLevel, isAnimating) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // Only intercept when Week/Month view is open
-                if (zoomLevel == CalendarZoom.DAY) return Offset.Zero
+                // Block gestures during animation or when in DAY mode
+                if (zoomLevel == CalendarZoom.DAY || isAnimating) return Offset.Zero
 
                 // Accumulate vertical scroll
                 dragOffset += available.y
@@ -171,6 +219,7 @@ fun TodayContent(
                 when {
                     // Scrolling up (negative offset) - close the view
                     dragOffset < -dragThreshold -> {
+                        isAnimating = true
                         when (zoomLevel) {
                             CalendarZoom.MONTH -> onZoomChange(CalendarZoom.WEEK)
                             CalendarZoom.WEEK -> onZoomChange(CalendarZoom.DAY)
@@ -181,6 +230,7 @@ fun TodayContent(
                     }
                     // Scrolling down (positive offset) - expand the view
                     dragOffset > dragThreshold -> {
+                        isAnimating = true
                         when (zoomLevel) {
                             CalendarZoom.WEEK -> onZoomChange(CalendarZoom.MONTH)
                             else -> {}
@@ -209,7 +259,9 @@ fun TodayContent(
 
     // Draggable state for header (DAY mode) and Week/Month overview
     val draggableState = rememberDraggableState { delta ->
-        dragOffset += delta
+        if (!isAnimating) {
+            dragOffset += delta
+        }
     }
 
     // Gesture modifier for header (opens Week view from DAY mode)
@@ -217,7 +269,8 @@ fun TodayContent(
         state = draggableState,
         orientation = Orientation.Vertical,
         onDragStopped = {
-            if (zoomLevel == CalendarZoom.DAY && dragOffset > dragThreshold) {
+            if (!isAnimating && zoomLevel == CalendarZoom.DAY && dragOffset > dragThreshold) {
+                isAnimating = true
                 onZoomChange(CalendarZoom.WEEK)
             }
             dragOffset = 0f
@@ -229,20 +282,24 @@ fun TodayContent(
         state = draggableState,
         orientation = Orientation.Vertical,
         onDragStopped = {
-            when {
-                // Swipe down - expand or do nothing
-                dragOffset > dragThreshold -> {
-                    when (zoomLevel) {
-                        CalendarZoom.WEEK -> onZoomChange(CalendarZoom.MONTH)
-                        else -> {}
+            if (!isAnimating) {
+                when {
+                    // Swipe down - expand or do nothing
+                    dragOffset > dragThreshold -> {
+                        isAnimating = true
+                        when (zoomLevel) {
+                            CalendarZoom.WEEK -> onZoomChange(CalendarZoom.MONTH)
+                            else -> {}
+                        }
                     }
-                }
-                // Swipe up - collapse
-                dragOffset < -dragThreshold -> {
-                    when (zoomLevel) {
-                        CalendarZoom.MONTH -> onZoomChange(CalendarZoom.WEEK)
-                        CalendarZoom.WEEK -> onZoomChange(CalendarZoom.DAY)
-                        else -> {}
+                    // Swipe up - collapse
+                    dragOffset < -dragThreshold -> {
+                        isAnimating = true
+                        when (zoomLevel) {
+                            CalendarZoom.MONTH -> onZoomChange(CalendarZoom.WEEK)
+                            CalendarZoom.WEEK -> onZoomChange(CalendarZoom.DAY)
+                            else -> {}
+                        }
                     }
                 }
             }
@@ -281,6 +338,7 @@ fun TodayContent(
                     .fillMaxSize()
                     .padding(innerPadding)
                     .statusBarsPadding()
+                    .nestedScroll(nestedScrollConnection)
             ) {
                 // Header (Today / Date Title)
                 Row(
@@ -304,11 +362,48 @@ fun TodayContent(
                         CalendarZoom.WEEK -> "Week Overview"
                         CalendarZoom.MONTH -> "Month Heatmap"
                     }
-                    Text(
-                        text = titleText,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+
+                    // Show time & weather icons when viewing today in TIME_ADAPTIVE mode
+                    val showIcons = zoomLevel == CalendarZoom.DAY &&
+                                   selectedDate == LocalDate.now() &&
+                                   settings?.themeMode == "TIME_ADAPTIVE"
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = titleText,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        if (showIcons) {
+                            // Current day phase icon
+                            val currentPhase = DayPhase.fromCurrentTime()
+                            Icon(
+                                imageVector = getDayPhaseIcon(currentPhase),
+                                contentDescription = "Current time: ${currentPhase.name}",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+
+                            // Weather icon (if enabled)
+                            if (settings?.weatherEffectsEnabled == true) {
+                                val currentWeather = try {
+                                    WeatherState.valueOf(settings.manualWeatherState)
+                                } catch (e: IllegalArgumentException) {
+                                    WeatherState.CLEAR
+                                }
+                                Icon(
+                                    imageVector = getWeatherIcon(currentWeather),
+                                    contentDescription = "Weather: ${currentWeather.name}",
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
                     Row {
                         IconButton(onClick = {
                             val workRequest = OneTimeWorkRequestBuilder<DailyPlanWorker>().build()
@@ -331,23 +426,86 @@ fun TodayContent(
                         enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
                         exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeOut()
                     ) {
-                        Column(modifier = overviewGestureModifier) {
+                        // Reset animation flag when animation completes
+                        LaunchedEffect(transition.currentState, transition.targetState) {
+                            if (transition.currentState == transition.targetState) {
+                                isAnimating = false
+                            }
+                        }
+
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             when (zoomLevel) {
                                 CalendarZoom.WEEK -> {
-                                    WeekOverviewGrid(
-                                        weekStart = selectedDate.minusDays(selectedDate.dayOfWeek.value.toLong() % 7),
-                                        itemsByDay = uiState.weekDensity,
-                                        onDaySelected = { onDateSelected(it); onZoomChange(CalendarZoom.DAY) },
-                                        accentColor = accentColor
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .pointerInput(isAnimating) {
+                                                if (isAnimating) return@pointerInput
+
+                                                var totalDragOffset = 0f
+
+                                                detectDragGestures(
+                                                    onDragStart = { totalDragOffset = 0f },
+                                                    onDragEnd = {
+                                                        if (totalDragOffset > dragThreshold) {
+                                                            // Swipe down - expand to Month
+                                                            isAnimating = true
+                                                            onZoomChange(CalendarZoom.MONTH)
+                                                        } else if (totalDragOffset < -dragThreshold) {
+                                                            // Swipe up - collapse to Day
+                                                            isAnimating = true
+                                                            onZoomChange(CalendarZoom.DAY)
+                                                        }
+                                                        totalDragOffset = 0f
+                                                    },
+                                                    onDrag = { change, dragAmount ->
+                                                        totalDragOffset += dragAmount.y
+                                                        change.consume()
+                                                    }
+                                                )
+                                            }
+                                    ) {
+                                        WeekOverviewGrid(
+                                            weekStart = selectedDate.minusDays(selectedDate.dayOfWeek.value.toLong() % 7),
+                                            itemsByDay = uiState.weekDensity,
+                                            onDaySelected = { onDateSelected(it); onZoomChange(CalendarZoom.DAY) },
+                                            accentColor = accentColor
+                                        )
+                                    }
                                 }
                                 CalendarZoom.MONTH -> {
-                                    MonthViewHeatmap(
-                                        currentMonth = YearMonth.from(selectedDate),
-                                        itemsByDay = uiState.monthDensity,
-                                        onDaySelected = { onDateSelected(it); onZoomChange(CalendarZoom.DAY) },
-                                        accentColor = accentColor
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .pointerInput(isAnimating) {
+                                                if (isAnimating) return@pointerInput
+
+                                                var totalDragOffset = 0f
+
+                                                detectDragGestures(
+                                                    onDragStart = { totalDragOffset = 0f },
+                                                    onDragEnd = {
+                                                        if (totalDragOffset < -dragThreshold) {
+                                                            // Swipe up - collapse to Week
+                                                            isAnimating = true
+                                                            onZoomChange(CalendarZoom.WEEK)
+                                                        }
+                                                        totalDragOffset = 0f
+                                                    },
+                                                    onDrag = { change, dragAmount ->
+                                                        totalDragOffset += dragAmount.y
+                                                        change.consume()
+                                                    }
+                                                )
+                                            }
+                                    ) {
+                                        MonthViewHeatmap(
+                                            currentMonth = YearMonth.from(selectedDate),
+                                            itemsByDay = uiState.monthDensity,
+                                            onDaySelected = { onDateSelected(it); onZoomChange(CalendarZoom.DAY) },
+                                            accentColor = accentColor
+                                        )
+                                    }
                                 }
                                 else -> {}
                             }
@@ -364,6 +522,13 @@ fun TodayContent(
                             enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
                             exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeOut()
                         ) {
+                            // Reset animation flag when animation completes
+                            LaunchedEffect(transition.currentState, transition.targetState) {
+                                if (transition.currentState == transition.targetState) {
+                                    isAnimating = false
+                                }
+                            }
+
                             Box(modifier = headerGestureModifier) {
                                 HorizontalDateSelector(selectedDate, onDateSelected, accentColor)
                             }
@@ -371,9 +536,7 @@ fun TodayContent(
                         Spacer(modifier = Modifier.height(16.dp))
                         LazyColumn(
                             state = listState,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .nestedScroll(nestedScrollConnection),
+                            modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 120.dp)
                         ) {
                             item {
@@ -383,11 +546,20 @@ fun TodayContent(
                                 Spacer(modifier = Modifier.height(32.dp))
                             }
                             items(uiState.planItems, key = { it.id }) { item ->
-                                val timeStr = if (item.startTimeMillis != null) {
-                                    Instant.ofEpochMilli(item.startTimeMillis)
-                                        .atZone(ZoneId.systemDefault())
-                                        .format(DateTimeFormatter.ofPattern("HH:mm"))
-                                } else item.window.name.lowercase().take(3).capitalize()
+                                // Show adjusted time for snoozed items
+                                val timeStr = when {
+                                    item.status == "SNOOZED" && item.snoozeUntil != null -> {
+                                        Instant.ofEpochMilli(item.snoozeUntil)
+                                            .atZone(ZoneId.systemDefault())
+                                            .format(DateTimeFormatter.ofPattern("HH:mm"))
+                                    }
+                                    item.startTimeMillis != null -> {
+                                        Instant.ofEpochMilli(item.startTimeMillis)
+                                            .atZone(ZoneId.systemDefault())
+                                            .format(DateTimeFormatter.ofPattern("HH:mm"))
+                                    }
+                                    else -> item.window.name.lowercase().take(3).capitalize()
+                                }
 
                                 val isPast = remember(item, selectedDate) {
                                     val nowLocalDate = LocalDate.now()
@@ -461,8 +633,12 @@ fun HorizontalDateSelector(selectedDate: LocalDate, onDateSelected: (LocalDate) 
 @Composable
 fun PlanEditorSheet(
     onDismiss: () -> Unit,
-    onSave: (String, PlanType, TimeAnchor, RecurrenceFrequency, Boolean, Int, Int, String?) -> Unit
+    onSaveRecurring: (String, PlanType, TimeAnchor, RecurrenceFrequency, Boolean, Int, Int, String?) -> Unit,
+    onSaveOneTime: (String, String, Int, Int, Int) -> Unit
 ) {
+    // Event type toggle
+    var isRecurring by remember { mutableStateOf(true) }
+
     var title by remember { mutableStateOf("") }
     var planType by remember { mutableStateOf(PlanType.ROUTINE) }
     var anchor by remember { mutableStateOf(TimeAnchor.FIXED) }
@@ -477,7 +653,17 @@ fun PlanEditorSheet(
     val timePickerState = rememberTimePickerState(initialHour = 9, initialMinute = 0)
     var durationMin by remember { mutableStateOf(30) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    // Date picker for one-time events
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = selectedDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
         LazyColumn(
             modifier = Modifier
                 .padding(24.dp)
@@ -493,6 +679,27 @@ fun PlanEditorSheet(
                 )
             }
 
+            // Event Type Toggle
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = isRecurring,
+                        onClick = { isRecurring = true },
+                        label = { Text("Recurring") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = !isRecurring,
+                        onClick = { isRecurring = false },
+                        label = { Text("One-time") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
             // Title
             item {
                 OutlinedTextField(
@@ -502,6 +709,29 @@ fun PlanEditorSheet(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+            }
+
+            // Date Selection (only for one-time events)
+            if (!isRecurring) {
+                item {
+                    Text("Date", style = MaterialTheme.typography.titleMedium)
+                    OutlinedCard(
+                        onClick = { showDatePicker = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.CalendarToday, contentDescription = null)
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                text = selectedDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                }
             }
 
             // Time Selection
@@ -525,71 +755,77 @@ fun PlanEditorSheet(
                 }
             }
 
-            // Anchor Type
-            item {
-                Text(stringResource(R.string.label_anchor), style = MaterialTheme.typography.titleMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TimeAnchor.values().forEach { a ->
-                        FilterChip(
-                            selected = anchor == a,
-                            onClick = { anchor = a },
-                            label = { Text(a.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                        )
+            // Anchor Type (only for recurring events)
+            if (isRecurring) {
+                item {
+                    Text(stringResource(R.string.label_anchor), style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TimeAnchor.values().forEach { a ->
+                            FilterChip(
+                                selected = anchor == a,
+                                onClick = { anchor = a },
+                                label = { Text(a.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                            )
+                        }
                     }
-                }
 
-                // Descriptive text for selected anchor
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = when (anchor) {
-                        TimeAnchor.FIXED -> "Absolute time every day (e.g., 09:00 means exactly 09:00)"
-                        TimeAnchor.WAKE -> "Relative to wake time (default 08:00). Time shown is final time."
-                        TimeAnchor.BED -> "Relative to bed time (default 23:00). Time shown is final time."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-            }
-
-            // Plan Type
-            item {
-                Text(stringResource(R.string.label_plan_type), style = MaterialTheme.typography.titleMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    PlanType.values().forEach { type ->
-                        FilterChip(
-                            selected = planType == type,
-                            onClick = { planType = type },
-                            label = { Text(type.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                        )
-                    }
+                    // Descriptive text for selected anchor
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = when (anchor) {
+                            TimeAnchor.FIXED -> "Absolute time every day (e.g., 09:00 means exactly 09:00)"
+                            TimeAnchor.WAKE -> "Relative to wake time (default 08:00). Time shown is final time."
+                            TimeAnchor.BED -> "Relative to bed time (default 23:00). Time shown is final time."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
                 }
             }
 
-            // Frequency
-            item {
-                Text(stringResource(R.string.label_frequency), style = MaterialTheme.typography.titleMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    RecurrenceFrequency.values().forEach { f ->
-                        FilterChip(
-                            selected = frequency == f,
-                            onClick = { frequency = f },
-                            label = { Text(f.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                        )
+            // Plan Type (only for recurring events)
+            if (isRecurring) {
+                item {
+                    Text(stringResource(R.string.label_plan_type), style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        PlanType.values().forEach { type ->
+                            FilterChip(
+                                selected = planType == type,
+                                onClick = { planType = type },
+                                label = { Text(type.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                            )
+                        }
                     }
                 }
             }
 
-            // Weekly day picker
-            if (frequency == RecurrenceFrequency.WEEKLY) {
+            // Frequency (only for recurring events)
+            if (isRecurring) {
+                item {
+                    Text(stringResource(R.string.label_frequency), style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RecurrenceFrequency.values().forEach { f ->
+                            FilterChip(
+                                selected = frequency == f,
+                                onClick = { frequency = f },
+                                label = { Text(f.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Weekly day picker (only for recurring weekly events)
+            if (isRecurring && frequency == RecurrenceFrequency.WEEKLY) {
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -619,11 +855,13 @@ fun PlanEditorSheet(
                 }
             }
 
-            // Core toggle
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.label_mark_core), modifier = Modifier.weight(1f))
-                    Switch(checked = isCore, onCheckedChange = { isCore = it })
+            // Core toggle (only for recurring events)
+            if (isRecurring) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.label_mark_core), modifier = Modifier.weight(1f))
+                        Switch(checked = isCore, onCheckedChange = { isCore = it })
+                    }
                 }
             }
 
@@ -631,20 +869,26 @@ fun PlanEditorSheet(
             item {
                 Button(
                     onClick = {
-                        // Calculate offset from anchor time
-                        val selectedMinutes = timePickerState.hour * 60 + timePickerState.minute
+                        if (isRecurring) {
+                            // Calculate offset from anchor time
+                            val selectedMinutes = timePickerState.hour * 60 + timePickerState.minute
 
-                        // Convert absolute time to offset based on anchor type
-                        // These values match the defaults in RecurrenceEngine
-                        val finalStart = when (anchor) {
-                            TimeAnchor.FIXED -> selectedMinutes // Offset from midnight (00:00)
-                            TimeAnchor.WAKE -> selectedMinutes - (8 * 60) // Offset from wake (08:00)
-                            TimeAnchor.BED -> selectedMinutes - (23 * 60) // Offset from bed (23:00)
+                            // Convert absolute time to offset based on anchor type
+                            // These values match the defaults in RecurrenceEngine
+                            val finalStart = when (anchor) {
+                                TimeAnchor.FIXED -> selectedMinutes // Offset from midnight (00:00)
+                                TimeAnchor.WAKE -> selectedMinutes - (8 * 60) // Offset from wake (08:00)
+                                TimeAnchor.BED -> selectedMinutes - (23 * 60) // Offset from bed (23:00)
+                            }
+
+                            val finalEnd = finalStart + durationMin
+                            val byDays = if (frequency == RecurrenceFrequency.WEEKLY) selectedDays.sorted().joinToString(",") else null
+                            onSaveRecurring(title, planType, anchor, frequency, isCore, finalStart, finalEnd, byDays)
+                        } else {
+                            // One-time event
+                            val dateStr = selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                            onSaveOneTime(title, dateStr, timePickerState.hour, timePickerState.minute, durationMin)
                         }
-
-                        val finalEnd = finalStart + durationMin
-                        val byDays = if (frequency == RecurrenceFrequency.WEEKLY) selectedDays.sorted().joinToString(",") else null
-                        onSave(title, planType, anchor, frequency, isCore, finalStart, finalEnd, byDays)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = title.isNotBlank()
@@ -663,6 +907,34 @@ fun PlanEditorSheet(
             TimePicker(state = timePickerState)
         }
     }
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        selectedDate = java.time.Instant.ofEpochMilli(millis)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDate()
+                    }
+                    showDatePicker = false
+                }) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancel")
+                }
+            },
+            colors = DatePickerDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 }
 
 @Composable
@@ -674,7 +946,8 @@ fun TimePickerDialog(
     AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = confirmButton,
-        text = content
+        text = content,
+        containerColor = MaterialTheme.colorScheme.surface
     )
 }
 
@@ -820,12 +1093,21 @@ fun PlanItemOrbCard(
     accentColor: Color
 ) {
     val completed = item.status == "DONE"
+    val skipped = item.status == "SKIPPED"
+    val snoozed = item.status == "SNOOZED"
+
     val scale by animateFloatAsState(if (completed) 0.98f else 1f)
-    val alpha by animateFloatAsState(if (completed) 0.6f else 1f)
+    val alpha by animateFloatAsState(
+        targetValue = when {
+            completed -> 0.6f
+            skipped -> 0.5f
+            else -> 1f
+        }
+    )
     val haptics = LocalHapticFeedback.current
 
     val glowAlpha by animateFloatAsState(
-        targetValue = if (completed) 0f else 0.3f,
+        targetValue = if (completed || skipped) 0f else 0.3f,
         animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse)
     )
 
@@ -845,7 +1127,7 @@ fun PlanItemOrbCard(
             .scale(scale)
             .alpha(alpha)
             .drawBehind {
-                if (!completed && item.isCore) {
+                if (!completed && !skipped && item.isCore) {
                     drawCircle(
                         color = accentColor.copy(alpha = glowAlpha),
                         radius = size.minDimension / 1.5f,
@@ -855,7 +1137,7 @@ fun PlanItemOrbCard(
             }
             .combinedClickable(
                 onClick = { onCheckedChange(item.id, !completed) },
-                onLongClick = { 
+                onLongClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     onLongPress(item)
                 }
@@ -865,11 +1147,74 @@ fun PlanItemOrbCard(
             Text(text = icon, style = MaterialTheme.typography.headlineSmall)
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = item.title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textDecoration = if (skipped) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+                )
             }
-            if (item.isCore) {
-                Surface(color = accentColor.copy(alpha = 0.2f), shape = CircleShape) {
-                    Text(text = stringResource(R.string.label_core), modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+            // Status badges
+            when {
+                completed -> {
+                    Surface(
+                        color = Color(0xFF4CAF50).copy(alpha = 0.2f),
+                        shape = CircleShape
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Done",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF4CAF50)
+                            )
+                        }
+                    }
+                }
+                skipped -> {
+                    Surface(
+                        color = Color(0xFFFF9800).copy(alpha = 0.2f),
+                        shape = CircleShape
+                    ) {
+                        Text(
+                            text = "Skipped",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFF9800)
+                        )
+                    }
+                }
+                snoozed -> {
+                    Surface(
+                        color = Color(0xFF2196F3).copy(alpha = 0.2f),
+                        shape = CircleShape
+                    ) {
+                        Text(
+                            text = "+15min",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF2196F3)
+                        )
+                    }
+                }
+                item.isCore -> {
+                    Surface(color = accentColor.copy(alpha = 0.2f), shape = CircleShape) {
+                        Text(
+                            text = stringResource(R.string.label_core),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                    }
                 }
             }
         }

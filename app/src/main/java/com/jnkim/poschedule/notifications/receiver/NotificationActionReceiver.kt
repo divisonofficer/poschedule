@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import com.jnkim.poschedule.data.repo.PlanRepository
 import com.jnkim.poschedule.notifications.NotificationConstants
+import com.jnkim.poschedule.workers.WidgetUpdateWorker
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,8 +24,9 @@ class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
         val routineId = intent.getStringExtra(NotificationConstants.EXTRA_ROUTINE_ID) ?: return
+        val isFromWidget = intent.getBooleanExtra(NotificationConstants.EXTRA_WIDGET_UPDATE_TRIGGER, false)
 
-        Log.d(TAG, "Received action: $action for item: $routineId")
+        Log.d(TAG, "Received action: $action for item: $routineId (fromWidget=$isFromWidget)")
 
         // Use a background scope to update the DB
         CoroutineScope(Dispatchers.IO).launch {
@@ -44,6 +46,12 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     Log.d(TAG, "Snoozing item $routineId until ${Instant.ofEpochMilli(snoozeUntil)}")
                     planRepository.updateItemWithSnooze(routineId, "SNOOZED", snoozeUntil)
                 }
+            }
+
+            // Trigger immediate widget update if action came from widget
+            if (isFromWidget) {
+                Log.d(TAG, "Triggering widget update after action")
+                WidgetUpdateWorker.enqueueImmediateUpdate(context)
             }
 
             // Trigger a re-evaluation of the system mode if needed

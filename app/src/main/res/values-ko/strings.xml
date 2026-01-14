@@ -46,7 +46,22 @@
     <string name="label_language">앱 언어</string>
     <string name="lang_en">English</string>
     <string name="lang_ko">한국어</string>
-    
+
+    <!-- Theme Settings -->
+    <string name="section_theme">테마 및 외관</string>
+    <string name="label_theme_mode">테마 모드</string>
+    <string name="theme_system">시스템</string>
+    <string name="theme_light">라이트</string>
+    <string name="theme_dark">다크</string>
+    <string name="theme_time_adaptive">시간 적응형</string>
+    <string name="label_weather_effects">날씨 효과</string>
+    <string name="desc_weather_effects">날씨 상태에 따라 미묘한 색상 변화</string>
+    <string name="label_current_weather">현재 날씨</string>
+    <string name="weather_clear">맑음</string>
+    <string name="weather_cloudy">흐림</string>
+    <string name="weather_rain">비</string>
+    <string name="weather_snow">눈</string>
+
     <string name="label_daily_budget">일일 알림 예산: %1$d회</string>
     <string name="desc_daily_budget">하루에 허용되는 최대 알림 횟수</string>
     

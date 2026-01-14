@@ -46,7 +46,22 @@
     <string name="label_language">App Language</string>
     <string name="lang_en">English</string>
     <string name="lang_ko">한국어</string>
-    
+
+    <!-- Theme Settings -->
+    <string name="section_theme">Theme &amp; Appearance</string>
+    <string name="label_theme_mode">Theme Mode</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_time_adaptive">Time Adaptive</string>
+    <string name="label_weather_effects">Weather Effects</string>
+    <string name="desc_weather_effects">Subtle color shifts based on weather conditions</string>
+    <string name="label_current_weather">Current Weather</string>
+    <string name="weather_clear">Clear</string>
+    <string name="weather_cloudy">Cloudy</string>
+    <string name="weather_rain">Rain</string>
+    <string name="weather_snow">Snow</string>
+
     <string name="label_daily_budget">Daily Budget: %1$d</string>
     <string name="desc_daily_budget">Max notifications allowed per day</string>
     
@@ -74,4 +89,7 @@
     <string name="channel_core_desc">Important daily tasks like medications and meals</string>
     <string name="channel_updates_name">Schedule Updates</string>
     <string name="channel_recovery_name">Recovery Support</string>
+
+    <!-- Widget -->
+    <string name="widget_description">Shows your next pending task with quick actions</string>
 </resources>

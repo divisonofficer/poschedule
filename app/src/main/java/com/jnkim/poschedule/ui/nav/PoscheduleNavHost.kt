@@ -7,6 +7,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.jnkim.poschedule.data.repo.SettingsRepository
 import com.jnkim.poschedule.notifications.NotificationHelper
 import com.jnkim.poschedule.ui.screens.DebugScreen
 import com.jnkim.poschedule.ui.screens.LoginScreen
@@ -41,8 +42,15 @@ fun PoscheduleNavHost(
         }
 
         composable(Route.Today.path) {
+            val context = LocalContext.current
+            val settingsRepository = EntryPointAccessors.fromApplication(
+                context.applicationContext,
+                SettingsRepositoryEntryPoint::class.java
+            ).settingsRepository()
+
             TodayScreen(
                 viewModel = hiltViewModel(),
+                settingsRepository = settingsRepository,
                 onNavigateToSettings = { navController.navigate(Route.Settings.path) },
                 onNavigateToTidySnap = { navController.navigate(Route.TidySnap.path) }
             )
@@ -88,4 +96,10 @@ fun PoscheduleNavHost(
 @InstallIn(SingletonComponent::class)
 interface NotificationHelperEntryPoint {
     fun notificationHelper(): NotificationHelper
+}
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface SettingsRepositoryEntryPoint {
+    fun settingsRepository(): SettingsRepository
 }

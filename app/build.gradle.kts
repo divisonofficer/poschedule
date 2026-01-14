@@ -88,6 +88,9 @@ dependencies {
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
 
+    // Glance (Compose-based widgets)
+    implementation(libs.androidx.glance.appwidget)
+
     // Networking
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)

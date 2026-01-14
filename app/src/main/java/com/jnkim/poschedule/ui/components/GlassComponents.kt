@@ -2,7 +2,6 @@ package com.jnkim.poschedule.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -11,17 +10,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.jnkim.poschedule.ui.theme.GlassDark
-import com.jnkim.poschedule.ui.theme.GlassWhite
 
+/**
+ * GlassCard with time-adaptive theming support.
+ * Now uses MaterialTheme.colorScheme which animates smoothly in time-adaptive mode.
+ * The glass effect (alpha transparency) is preserved while colors adapt to the current day phase.
+ */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
-    val baseColor = if (isDark) GlassDark else GlassWhite
-    val borderColor = if (isDark) Color(0x1FFFFFFF) else Color(0x59FFFFFF)
+    val colorScheme = MaterialTheme.colorScheme
+
+    // Use surface color from theme (automatically animated in time-adaptive mode)
+    // Higher alpha (0.95f) for better visibility in modals and overlays
+    val baseColor = colorScheme.surface.copy(alpha = 0.95f)
+    val borderColor = colorScheme.outline.copy(alpha = 0.2f)
 
     Surface(
         modifier = modifier,
@@ -37,14 +42,18 @@ fun GlassCard(
     }
 }
 
+/**
+ * GlassBackground with time-adaptive theming support.
+ * Now uses MaterialTheme.colorScheme.background which changes with day phase.
+ * Mode accent colors (passed as parameters) still work and layer on top.
+ */
 @Composable
 fun GlassBackground(
     accentColor: Color,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
-    val bgColor = if (isDark) Color(0xFF0E1116) else Color(0xFFF5F7FA)
-    
+    val bgColor = MaterialTheme.colorScheme.background
+
     Box(
         modifier = Modifier
             .fillMaxSize()

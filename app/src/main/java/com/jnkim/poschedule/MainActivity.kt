@@ -12,6 +12,8 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
@@ -89,7 +91,14 @@ class MainActivity : AppCompatActivity() {
 
         enableEdgeToEdge()
         setContent {
-            PoscheduleTheme {
+            // Collect settings for theme configuration
+            val settings by settingsRepository.settingsFlow.collectAsState(initial = null)
+
+            PoscheduleTheme(
+                themeMode = settings?.themeMode ?: "TIME_ADAPTIVE",
+                weatherEffectsEnabled = settings?.weatherEffectsEnabled ?: true,
+                manualWeatherState = settings?.manualWeatherState ?: "CLEAR"
+            ) {
                 val authViewModel: AuthViewModel = hiltViewModel()
                 val startDestination = if (authViewModel.isUserLoggedIn()) {
                     Route.Today.path

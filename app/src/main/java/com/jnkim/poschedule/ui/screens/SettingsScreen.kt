@@ -189,6 +189,103 @@ fun SettingsScreen(
                     }
                 }
 
+                // Theme & Appearance Section
+                Text(stringResource(R.string.section_theme), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    settings?.let { s ->
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            // Theme Mode Selection
+                            Text(stringResource(R.string.label_theme_mode), style = MaterialTheme.typography.bodyLarge)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = s.themeMode == "SYSTEM",
+                                    onClick = { viewModel.updateThemeMode("SYSTEM") },
+                                    label = { Text(stringResource(R.string.theme_system)) }
+                                )
+                                FilterChip(
+                                    selected = s.themeMode == "LIGHT",
+                                    onClick = { viewModel.updateThemeMode("LIGHT") },
+                                    label = { Text(stringResource(R.string.theme_light)) }
+                                )
+                                FilterChip(
+                                    selected = s.themeMode == "DARK",
+                                    onClick = { viewModel.updateThemeMode("DARK") },
+                                    label = { Text(stringResource(R.string.theme_dark)) }
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = s.themeMode == "TIME_ADAPTIVE",
+                                    onClick = { viewModel.updateThemeMode("TIME_ADAPTIVE") },
+                                    label = { Text(stringResource(R.string.theme_time_adaptive)) }
+                                )
+                            }
+
+                            // Weather Effects Toggle (only shown in TIME_ADAPTIVE mode)
+                            if (s.themeMode == "TIME_ADAPTIVE") {
+                                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(stringResource(R.string.label_weather_effects), style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            stringResource(R.string.desc_weather_effects),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    Switch(
+                                        checked = s.weatherEffectsEnabled,
+                                        onCheckedChange = { viewModel.updateWeatherEffectsEnabled(it) }
+                                    )
+                                }
+
+                                // Manual Weather Selection (only shown when weather effects enabled)
+                                if (s.weatherEffectsEnabled) {
+                                    Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                                    Text(stringResource(R.string.label_current_weather), style = MaterialTheme.typography.bodyLarge)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        FilterChip(
+                                            selected = s.manualWeatherState == "CLEAR",
+                                            onClick = { viewModel.updateManualWeatherState("CLEAR") },
+                                            label = { Text(stringResource(R.string.weather_clear)) }
+                                        )
+                                        FilterChip(
+                                            selected = s.manualWeatherState == "CLOUDY",
+                                            onClick = { viewModel.updateManualWeatherState("CLOUDY") },
+                                            label = { Text(stringResource(R.string.weather_cloudy)) }
+                                        )
+                                        FilterChip(
+                                            selected = s.manualWeatherState == "RAIN",
+                                            onClick = { viewModel.updateManualWeatherState("RAIN") },
+                                            label = { Text(stringResource(R.string.weather_rain)) }
+                                        )
+                                        FilterChip(
+                                            selected = s.manualWeatherState == "SNOW",
+                                            onClick = { viewModel.updateManualWeatherState("SNOW") },
+                                            label = { Text(stringResource(R.string.weather_snow)) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Developer / Simulation Section (New for Milestone 2.4)
                 Text("Developer / Experiments", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 GlassCard(modifier = Modifier.fillMaxWidth()) {

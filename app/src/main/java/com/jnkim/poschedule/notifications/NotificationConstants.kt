@@ -13,4 +13,8 @@ object NotificationConstants {
 
     const val EXTRA_ROUTINE_ID = "extra_routine_id"
     const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
+
+    // Widget-specific constants
+    const val EXTRA_WIDGET_UPDATE_TRIGGER = "extra_widget_update_trigger"
+    const val REQUEST_CODE_WIDGET_OFFSET = 1000  // Widget actions: routineId.hashCode() + 1000
 }

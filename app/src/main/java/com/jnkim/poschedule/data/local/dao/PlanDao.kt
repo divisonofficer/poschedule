@@ -64,4 +64,24 @@ interface PlanDao {
 
     @Query("DELETE FROM plan_series_exceptions")
     suspend fun deleteAllExceptions()
+
+    // --- Widget Support ---
+    /**
+     * Get the next pending task for widget display.
+     * Returns the earliest pending task that:
+     * - Is in PENDING status
+     * - Is not snoozed (or snooze has expired)
+     * - Has a defined start time
+     * Ordered by start time ascending.
+     */
+    @Query("""
+        SELECT * FROM plan_items
+        WHERE date = :date
+        AND status = 'PENDING'
+        AND (snoozeUntil IS NULL OR snoozeUntil <= :currentTimeMillis)
+        AND (startTimeMillis IS NOT NULL)
+        ORDER BY startTimeMillis ASC
+        LIMIT 1
+    """)
+    suspend fun getNextPendingTask(date: String, currentTimeMillis: Long): PlanItemEntity?
 }

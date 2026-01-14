@@ -68,6 +68,18 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun updateThemeMode(mode: String) {
+        viewModelScope.launch { repository.updateThemeMode(mode) }
+    }
+
+    fun updateWeatherEffectsEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.updateWeatherEffectsEnabled(enabled) }
+    }
+
+    fun updateManualWeatherState(state: String) {
+        viewModelScope.launch { repository.updateManualWeatherState(state) }
+    }
+
     /**
      * Simulation tool for Milestone 2.4
      * Injects a day with missed core tasks to test RECOVERY mode triggers.
