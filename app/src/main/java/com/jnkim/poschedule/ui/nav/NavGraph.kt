@@ -6,4 +6,5 @@ sealed class Route(val path: String) {
     object Settings : Route("settings")
     object PlanEditor : Route("plan_editor")
     object TidySnap : Route("tidy_snap")
+    object Debug : Route("debug")
 }

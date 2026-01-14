@@ -17,6 +17,8 @@
     <string name="action_snap_chore">집안일 촬영</string>
     <string name="action_refresh">새로고침</string>
     <string name="action_fetch_key">키 가져오기</string>
+    <string name="action_next">다음</string>
+    <string name="action_save_lifestyle">생활 습관에 추가</string>
     
     <!-- Today Screen -->
     <string name="header_your_plan">나의 계획</string>
@@ -48,10 +50,18 @@
     <string name="label_daily_budget">일일 알림 예산: %1$d회</string>
     <string name="desc_daily_budget">하루에 허용되는 최대 알림 횟수</string>
     
-    <!-- Plan Editor -->
-    <string name="title_add_tiny_task">작은 일 추가</string>
-    <string name="hint_tiny_task">지금 할 수 있는 아주 작은 일...</string>
-    <string name="label_when">언제 할까요?</string>
+    <!-- Plan Editor / Routine Creator -->
+    <string name="title_create_routine">새 루틴 만들기</string>
+    <string name="title_schedule_logic">일정 로직</string>
+    <string name="label_what_is_it">어떤 일인가요?</string>
+    <string name="label_plan_type">유형</string>
+    <string name="label_mark_core">핵심 루틴으로 설정</string>
+    <string name="label_anchor">기준 시간 (앵커)</string>
+    <string name="label_frequency">반복 빈도</string>
+    <string name="label_time_window">시간대</string>
+    <string name="label_repeats">반복</string>
+    <string name="label_start_time">시작 시간</string>
+    <string name="label_end_time">종료 시간</string>
     
     <!-- Tidy Snap -->
     <string name="processing_vision">작은 단계들로 나누는 중...</string>

@@ -2,9 +2,10 @@ package com.jnkim.poschedule.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.jnkim.poschedule.data.local.entity.PlanItemEntity
-import com.jnkim.poschedule.data.local.entity.PlanItemWindow
+import com.jnkim.poschedule.data.local.entity.*
 import com.jnkim.poschedule.data.repo.PlanRepository
+import com.jnkim.poschedule.data.repo.SettingsRepository
+import com.jnkim.poschedule.data.repo.UserSettings
 import com.jnkim.poschedule.domain.ai.GentleCopyRequest
 import com.jnkim.poschedule.domain.ai.GentleCopyUseCase
 import com.jnkim.poschedule.domain.engine.ModeStateMachine
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 import javax.inject.Inject
 
 data class TodayUiState(
@@ -24,12 +26,14 @@ data class TodayUiState(
     val mode: Mode = Mode.NORMAL,
     val systemMessageTitle: String = "시스템이 안정적입니다",
     val systemMessageBody: String = "오늘도 당신의 속도대로 진행하세요",
+    val userSettings: UserSettings? = null,
     val isLoading: Boolean = true
 )
 
 @HiltViewModel
 class TodayViewModel @Inject constructor(
     private val planRepository: PlanRepository,
+    private val settingsRepository: SettingsRepository,
     private val gentleCopyUseCase: GentleCopyUseCase,
     private val modeStateMachine: ModeStateMachine
 ) : ViewModel() {
@@ -47,17 +51,13 @@ class TodayViewModel @Inject constructor(
             
             combine(
                 planRepository.getPlanItems(date),
-                flow { 
-                    val planDay = planRepository.getPlanDay(date)
-                    emit(planDay?.mode ?: Mode.NORMAL)
-                },
+                flow { emit(planRepository.getPlanDay(date)?.mode ?: Mode.NORMAL) },
                 _systemMessage,
+                settingsRepository.settingsFlow,
                 combine(weekDates.map { planRepository.getPlanItems(it) }) { itemsArray ->
-                    itemsArray.indices.associate { i -> 
-                        LocalDate.parse(weekDates[i]) to itemsArray[i]
-                    }
+                    itemsArray.indices.associate { i -> LocalDate.parse(weekDates[i]) to itemsArray[i] }
                 }
-            ) { items, mode, message, weekMap ->
+            ) { items, mode, message, settings, weekMap ->
                 TodayUiState(
                     planItems = items,
                     weekDensity = weekMap,
@@ -65,6 +65,7 @@ class TodayViewModel @Inject constructor(
                     mode = mode,
                     systemMessageTitle = message.first,
                     systemMessageBody = message.second,
+                    userSettings = settings,
                     isLoading = false
                 )
             }
@@ -120,16 +121,12 @@ class TodayViewModel @Inject constructor(
     fun refreshSystemMessage() {
         viewModelScope.launch {
             val date = _selectedDate.value
-            val planDay = planRepository.getPlanDay(date)
-            val mode = planDay?.mode ?: Mode.NORMAL
             val items = planRepository.getPlanItems(date).first()
-            
             val response = gentleCopyUseCase.generateMessage(
                 GentleCopyRequest(
-                    mode = mode,
+                    mode = uiState.value.mode,
                     pendingItemsCount = items.count { it.status == "PENDING" },
-                    completedTodayCount = items.count { it.status == "DONE" },
-                    userLocale = "ko"
+                    completedTodayCount = items.count { it.status == "DONE" }
                 )
             )
             _systemMessage.value = Pair(response.title, response.body)
@@ -159,22 +156,16 @@ class TodayViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Slice 2: Remove only this occurrence
-     */
-    fun removeOccurrence(seriesId: String) {
+    fun stopSeries(seriesId: String) {
         viewModelScope.launch {
-            planRepository.removeOccurrence(seriesId, _selectedDate.value)
+            planRepository.stopRepeatingSeries(seriesId, _selectedDate.value)
             evaluateCurrentMode()
         }
     }
 
-    /**
-     * Slice 2: Stop entire series
-     */
-    fun stopSeries(seriesId: String) {
+    fun removeOccurrence(seriesId: String) {
         viewModelScope.launch {
-            planRepository.stopRepeatingSeries(seriesId, _selectedDate.value)
+            planRepository.removeOccurrence(seriesId, _selectedDate.value)
             evaluateCurrentMode()
         }
     }
@@ -183,6 +174,36 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             planRepository.addManualItem(_selectedDate.value, title, window)
             refreshSystemMessage()
+        }
+    }
+
+    fun addPlanSeries(
+        title: String,
+        planType: PlanType,
+        anchor: TimeAnchor,
+        frequency: RecurrenceFrequency,
+        isCore: Boolean,
+        startOffset: Int,
+        endOffset: Int,
+        byDays: String? = null
+    ) {
+        viewModelScope.launch {
+            val series = PlanSeriesEntity(
+                id = UUID.randomUUID().toString(),
+                title = title,
+                type = planType,
+                routineType = null,
+                isCore = isCore,
+                anchor = anchor,
+                startOffsetMin = startOffset,
+                endOffsetMin = endOffset,
+                frequency = frequency,
+                interval = 1,
+                byDays = byDays,
+                isActive = true,
+                archived = false
+            )
+            planRepository.addSeries(series)
         }
     }
 

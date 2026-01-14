@@ -29,6 +29,9 @@ interface PlanDao {
     @Query("UPDATE plan_items SET status = :status WHERE id = :id")
     suspend fun updatePlanItemStatus(id: String, status: String)
 
+    @Query("UPDATE plan_items SET status = :status, snoozeUntil = :snoozeUntilMillis WHERE id = :id")
+    suspend fun updatePlanItemWithSnooze(id: String, status: String, snoozeUntilMillis: Long)
+
     @Query("DELETE FROM plan_items WHERE date = :date AND source = :source")
     suspend fun deleteItemsBySource(date: String, source: PlanItemSource)
 
@@ -51,4 +54,14 @@ interface PlanDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM plan_series_exceptions WHERE seriesId = :seriesId AND date = :date)")
     suspend fun isExcluded(seriesId: String, date: String): Boolean
+
+    // --- Data Cleanup (for migrations) ---
+    @Query("DELETE FROM plan_series")
+    suspend fun deleteAllSeries()
+
+    @Query("DELETE FROM plan_items WHERE source = 'DETERMINISTIC'")
+    suspend fun deleteAllDeterministicItems()
+
+    @Query("DELETE FROM plan_series_exceptions")
+    suspend fun deleteAllExceptions()
 }

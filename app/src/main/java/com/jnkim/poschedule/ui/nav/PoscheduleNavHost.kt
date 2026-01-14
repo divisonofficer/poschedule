@@ -1,16 +1,23 @@
 package com.jnkim.poschedule.ui.nav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.jnkim.poschedule.notifications.NotificationHelper
+import com.jnkim.poschedule.ui.screens.DebugScreen
 import com.jnkim.poschedule.ui.screens.LoginScreen
 import com.jnkim.poschedule.ui.screens.SettingsScreen
 import com.jnkim.poschedule.ui.screens.TodayScreen
 import com.jnkim.poschedule.ui.screens.TidySnapScreen
 import com.jnkim.poschedule.ui.viewmodel.AuthViewModel
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 
 @Composable
 fun PoscheduleNavHost(
@@ -53,6 +60,7 @@ fun PoscheduleNavHost(
             SettingsScreen(
                 viewModel = hiltViewModel(),
                 onBack = { navController.popBackStack() },
+                onNavigateToDebug = { navController.navigate(Route.Debug.path) },
                 onLogout = {
                     navController.navigate(Route.Login.path) {
                         popUpTo(0) { inclusive = true }
@@ -60,5 +68,24 @@ fun PoscheduleNavHost(
                 }
             )
         }
+
+        composable(Route.Debug.path) {
+            val context = LocalContext.current
+            val notificationHelper = EntryPointAccessors.fromApplication(
+                context.applicationContext,
+                NotificationHelperEntryPoint::class.java
+            ).notificationHelper()
+
+            DebugScreen(
+                notificationHelper = notificationHelper,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
     }
+}
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface NotificationHelperEntryPoint {
+    fun notificationHelper(): NotificationHelper
 }

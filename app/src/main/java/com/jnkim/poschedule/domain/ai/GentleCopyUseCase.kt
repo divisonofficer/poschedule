@@ -10,14 +10,7 @@ import javax.inject.Singleton
 data class GentleCopyRequest(
     val mode: Mode,
     val pendingItemsCount: Int,
-    val completedTodayCount: Int,
-    val userLocale: String
-)
-
-data class GentleCopyResponse(
-    val title: String,
-    val body: String,
-    val tone: String
+    val completedTodayCount: Int
 )
 
 @Singleton
@@ -27,19 +20,19 @@ class GentleCopyUseCase @Inject constructor(
 ) {
     suspend fun generateMessage(request: GentleCopyRequest): GentleCopyResponse {
         val settings = settingsRepository.settingsFlow.first()
+        val language = settings.language // Use the app-internal setting
         
         // Safety Gate: Check if AI is enabled and API key exists
         if (!settings.aiEnabled || tokenManager.getApiKey() == null) {
-            return getFallbackMessage(request.mode, settings.language)
+            return getFallbackMessage(request.mode, language)
         }
 
-        // In a real implementation, we would call the GenAiClient here.
-        // For MVP, we pass the language to the simulated generator.
-        return getSimulatedAiMessage(request)
+        // Pass the app-specific language to the simulated/real generator
+        return getSimulatedAiMessage(request, language)
     }
 
-    private fun getSimulatedAiMessage(request: GentleCopyRequest): GentleCopyResponse {
-        val isKo = request.userLocale == "ko"
+    private fun getSimulatedAiMessage(request: GentleCopyRequest, language: String): GentleCopyResponse {
+        val isKo = language == "ko"
         return when (request.mode) {
             Mode.RECOVERY -> GentleCopyResponse(
                 if (isKo) "잠시 숨 고르기" else "A small breath",
@@ -53,12 +46,23 @@ class GentleCopyUseCase @Inject constructor(
                 else "It's okay to take it slow. Just one tiny step at your own pace.",
                 "calm"
             )
-            else -> getFallbackMessage(request.mode, request.userLocale)
+            Mode.BUSY -> GentleCopyResponse(
+                if (isKo) "집중 모드" else "Focus Mode",
+                if (isKo) "불필요한 알림을 줄였습니다. 핵심 루틴에만 집중하세요."
+                else "Notifications reduced. Focus on your core routines for now.",
+                "firm"
+            )
+            Mode.NORMAL -> GentleCopyResponse(
+                if (isKo) "시스템 안정" else "System Stable",
+                if (isKo) "오늘 계획대로 잘 진행되고 있습니다. 다음 단계는 무엇인가요?"
+                else "The day is moving well. You've completed ${request.completedTodayCount} tasks. What's next?",
+                "calm"
+            )
         }
     }
 
-    private fun getFallbackMessage(mode: Mode, lang: String): GentleCopyResponse {
-        val isKo = lang == "ko"
+    private fun getFallbackMessage(mode: Mode, language: String): GentleCopyResponse {
+        val isKo = language == "ko"
         return when (mode) {
             Mode.RECOVERY -> GentleCopyResponse(
                 if (isKo) "회복 모드" else "Recovery Mode", 
@@ -83,3 +87,9 @@ class GentleCopyUseCase @Inject constructor(
         }
     }
 }
+
+data class GentleCopyResponse(
+    val title: String,
+    val body: String,
+    val tone: String
+)

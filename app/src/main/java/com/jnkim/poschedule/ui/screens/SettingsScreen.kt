@@ -1,5 +1,6 @@
 package com.jnkim.poschedule.ui.screens
 
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -11,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -19,16 +21,23 @@ import com.jnkim.poschedule.ui.components.GlassBackground
 import com.jnkim.poschedule.ui.components.GlassCard
 import com.jnkim.poschedule.ui.theme.ModeNormal
 import com.jnkim.poschedule.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
+    onNavigateToDebug: () -> Unit,
     onLogout: () -> Unit
 ) {
     val settings by viewModel.settings.collectAsState()
     val isApiKeyPresent by viewModel.isApiKeyPresent.collectAsState()
+
+    // Triple-tap detection state
+    var tapCount by remember { mutableStateOf(0) }
+    val coroutineScope = rememberCoroutineScope()
 
     GlassBackground(accentColor = ModeNormal) {
         Column(
@@ -37,7 +46,27 @@ fun SettingsScreen(
                 .statusBarsPadding()
         ) {
             TopAppBar(
-                title = { Text(stringResource(R.string.title_settings)) },
+                title = {
+                    Text(
+                        text = stringResource(R.string.title_settings),
+                        modifier = Modifier.pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = {
+                                    tapCount++
+                                    if (tapCount >= 3) {
+                                        tapCount = 0
+                                        onNavigateToDebug()
+                                    } else {
+                                        coroutineScope.launch {
+                                            delay(1000)
+                                            tapCount = 0
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.action_back))

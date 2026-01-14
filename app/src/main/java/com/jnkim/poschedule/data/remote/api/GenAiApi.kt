@@ -1,5 +1,6 @@
 package com.jnkim.poschedule.data.remote.api
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import okhttp3.MultipartBody
 import retrofit2.http.*
@@ -8,13 +9,23 @@ import retrofit2.http.*
 data class GenAiRequest(
     val messages: List<GenAiMessage>,
     val temperature: Float = 0.7f,
-    val response_format: String? = "json"
+    val response_format: String? = "json",
+    val files: List<GenAiFile> = emptyList(),
+    @SerialName("chat_threads_id") val chatThreadsId: String? = null,
+    @SerialName("chat_room_id") val chatRoomsId: String? = null
 )
 
 @Serializable
 data class GenAiMessage(
     val role: String,
     val content: String
+)
+
+@Serializable
+data class GenAiFile(
+    val id: String,
+    val name: String,
+    val url: String
 )
 
 @Serializable
@@ -35,7 +46,8 @@ data class FileUploadResponse(
 
 @Serializable
 data class FileData(
-    val file_url: String
+    val id: String? = null,
+    @SerialName("file_url") val fileUrl: String
 )
 
 interface GenAiApi {

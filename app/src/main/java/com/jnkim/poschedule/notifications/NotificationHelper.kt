@@ -58,6 +58,7 @@ class NotificationHelper @Inject constructor(
             context, 0, intent, PendingIntent.FLAG_IMMUTABLE
         )
 
+        // Create action intents
         val doneIntent = Intent(context, NotificationActionReceiver::class.java).apply {
             action = NotificationConstants.ACTION_DONE
             putExtra(NotificationConstants.EXTRA_ROUTINE_ID, candidate.id)
@@ -66,12 +67,20 @@ class NotificationHelper @Inject constructor(
             context, candidate.id.hashCode(), doneIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val skipIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = NotificationConstants.ACTION_SKIP
+            putExtra(NotificationConstants.EXTRA_ROUTINE_ID, candidate.id)
+        }
+        val skipPendingIntent = PendingIntent.getBroadcast(
+            context, candidate.id.hashCode() + 1, skipIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val snoozeIntent = Intent(context, NotificationActionReceiver::class.java).apply {
             action = NotificationConstants.ACTION_SNOOZE_15
             putExtra(NotificationConstants.EXTRA_ROUTINE_ID, candidate.id)
         }
         val snoozePendingIntent = PendingIntent.getBroadcast(
-            context, candidate.id.hashCode() + 1, snoozeIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            context, candidate.id.hashCode() + 2, snoozeIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val builder = NotificationCompat.Builder(context, channelId)
@@ -82,6 +91,7 @@ class NotificationHelper @Inject constructor(
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .addAction(0, context.getString(R.string.action_done), donePendingIntent)
+            .addAction(0, context.getString(R.string.action_skip), skipPendingIntent)
             .addAction(0, context.getString(R.string.action_snooze), snoozePendingIntent)
 
         notificationManager.notify(candidate.id.hashCode(), builder.build())

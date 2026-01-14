@@ -16,16 +16,26 @@ class RecurrenceEngine @Inject constructor(
     /**
      * Expands a routine series into a plan item for a specific date if it matches the rules.
      * Implements Section 5.4 Anchored Windows logic and respects Slice 2 Exceptions.
+     *
+     * CRITICAL TIMEZONE BEHAVIOR:
+     * - `date` parameter represents a LOCAL date (e.g., 2026-01-14 in Korea)
+     * - All time calculations are done in the system's local timezone
+     * - The returned PlanItemEntity.date field ALWAYS matches the input `date` parameter
+     * - Timestamps are stored in UTC but represent the local time on the given local date
      */
     suspend fun expand(
-        series: PlanSeriesEntity, 
+        series: PlanSeriesEntity,
         date: LocalDate,
         wakeEstimate: LocalTime = LocalTime.of(8, 0), // TODO: Fetch from user prefs
         bedTarget: LocalTime = LocalTime.of(23, 0)
     ): PlanItemEntity? {
-        
+
+        // CRITICAL: Use the input date parameter directly for the date string
+        // This ensures the plan is always associated with the correct LOCAL date
+        val dateStr = date.toString() // e.g., "2026-01-14"
+
         // 1. Check for Slice 2 Exceptions
-        if (planDao.isExcluded(series.id, date.toString())) {
+        if (planDao.isExcluded(series.id, dateStr)) {
             return null
         }
 
@@ -34,8 +44,8 @@ class RecurrenceEngine @Inject constructor(
             RecurrenceFrequency.DAILY -> true
             RecurrenceFrequency.WEEKLY -> {
                 val dayOfWeek = date.dayOfWeek.value // 1 (Mon) to 7 (Sun)
-                val activeDays = series.byDays?.split(",")?.map { it.trim().toInt() } ?: emptyList()
-                activeDays.contains(dayOfWeek)
+                val activeDays = series.byDays?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
+                activeDays.isEmpty() || activeDays.contains(dayOfWeek)
             }
             RecurrenceFrequency.MONTHLY -> {
                 val dayOfMonth = date.dayOfMonth
@@ -47,23 +57,36 @@ class RecurrenceEngine @Inject constructor(
         if (!isMatch) return null
 
         // 3. Calculate Anchored Window (G4: Notification Calibration)
-        val dateStr = date.toString()
+        // IMPORTANT: All time calculations use the system's local timezone
         val zoneId = ZoneId.systemDefault()
-        
+
         val anchorTime = when (series.anchor) {
             TimeAnchor.WAKE -> wakeEstimate
             TimeAnchor.BED -> bedTarget
-            TimeAnchor.FIXED -> LocalTime.of(9, 0) // Placeholder
+            TimeAnchor.FIXED -> LocalTime.MIDNIGHT // FIXED anchor is absolute time from midnight
         }
 
-        val startTime = date.atTime(anchorTime.plusMinutes(series.startOffsetMin.toLong()))
-            .atZone(zoneId).toInstant().toEpochMilli()
-        val endTime = date.atTime(anchorTime.plusMinutes(series.endOffsetMin.toLong()))
-            .atZone(zoneId).toInstant().toEpochMilli()
+        // Build LocalDateTime for the given date in local timezone
+        // Example: date=2026-01-14, anchorTime=00:00, offset=1080min → 2026-01-14T18:00 (local)
+        val startDateTime = date.atTime(anchorTime).plusMinutes(series.startOffsetMin.toLong())
+        val endDateTime = date.atTime(anchorTime).plusMinutes(series.endOffsetMin.toLong())
+
+        // Convert to UTC timestamps for storage
+        // Example: 2026-01-14T18:00+09:00 → 2026-01-14T09:00:00Z
+        val startTime = startDateTime.atZone(zoneId).toInstant().toEpochMilli()
+        val endTime = endDateTime.atZone(zoneId).toInstant().toEpochMilli()
+
+        // Debug logging for timestamp generation
+        android.util.Log.d("RecurrenceEngine",
+            "Expanding ${series.title} for $dateStr | " +
+            "anchor=${series.anchor}, startOffset=${series.startOffsetMin}, endOffset=${series.endOffsetMin} | " +
+            "startDateTime=$startDateTime, endDateTime=$endDateTime | " +
+            "startTime=$startTime, endTime=$endTime | " +
+            "timezone=${zoneId.id}")
 
         return PlanItemEntity(
             id = "${series.id}_$dateStr", // Deterministic Instance ID
-            date = dateStr,
+            date = dateStr, // CRITICAL: Always use the input date, never derive from timestamp
             title = series.title,
             type = series.routineType,
             source = PlanItemSource.DETERMINISTIC,

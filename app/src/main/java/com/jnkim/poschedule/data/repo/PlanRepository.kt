@@ -36,6 +36,18 @@ class PlanRepository @Inject constructor(
         planDao.updatePlanItemStatus(id, status)
     }
 
+    /**
+     * Update item status with snooze timing.
+     * Used by NotificationActionReceiver when user taps "Snooze 15 min".
+     *
+     * @param id Plan item ID
+     * @param status Should be "SNOOZED"
+     * @param snoozeUntilMillis Timestamp when snooze expires (Instant.toEpochMilli())
+     */
+    suspend fun updateItemWithSnooze(id: String, status: String, snoozeUntilMillis: Long) {
+        planDao.updatePlanItemWithSnooze(id, status, snoozeUntilMillis)
+    }
+
     suspend fun insertPlanItem(item: PlanItemEntity) {
         planDao.insertPlanItem(item)
     }

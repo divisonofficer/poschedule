@@ -3,12 +3,15 @@ package com.jnkim.poschedule.notifications.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.jnkim.poschedule.data.repo.PlanRepository
 import com.jnkim.poschedule.notifications.NotificationConstants
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -21,20 +24,34 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val action = intent.action ?: return
         val routineId = intent.getStringExtra(NotificationConstants.EXTRA_ROUTINE_ID) ?: return
 
+        Log.d(TAG, "Received action: $action for item: $routineId")
+
         // Use a background scope to update the DB
         CoroutineScope(Dispatchers.IO).launch {
             when (action) {
                 NotificationConstants.ACTION_DONE -> {
+                    Log.d(TAG, "Marking item $routineId as DONE")
                     planRepository.updateItemStatus(routineId, "DONE")
                 }
+
+                NotificationConstants.ACTION_SKIP -> {
+                    Log.d(TAG, "Marking item $routineId as SKIP")
+                    planRepository.updateItemStatus(routineId, "SKIP")
+                }
+
                 NotificationConstants.ACTION_SNOOZE_15 -> {
-                    // In a real implementation, we'd update a 'snoozeCount' and move the window
-                    planRepository.updateItemStatus(routineId, "SNOOZED")
+                    val snoozeUntil = Instant.now().plus(15, ChronoUnit.MINUTES).toEpochMilli()
+                    Log.d(TAG, "Snoozing item $routineId until ${Instant.ofEpochMilli(snoozeUntil)}")
+                    planRepository.updateItemWithSnooze(routineId, "SNOOZED", snoozeUntil)
                 }
             }
-            
+
             // Trigger a re-evaluation of the system mode if needed
             // (TodayViewModel will automatically pick up the status change via Flow)
         }
+    }
+
+    companion object {
+        private const val TAG = "NotificationActionReceiver"
     }
 }

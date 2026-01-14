@@ -17,6 +17,8 @@
     <string name="action_snap_chore">Snap a chore</string>
     <string name="action_refresh">Refresh</string>
     <string name="action_fetch_key">Fetch Key</string>
+    <string name="action_next">Next</string>
+    <string name="action_save_lifestyle">Add to Lifestyle</string>
     
     <!-- Today Screen -->
     <string name="header_your_plan">Your Plan</string>
@@ -48,10 +50,18 @@
     <string name="label_daily_budget">Daily Budget: %1$d</string>
     <string name="desc_daily_budget">Max notifications allowed per day</string>
     
-    <!-- Plan Editor -->
-    <string name="title_add_tiny_task">Add a tiny task</string>
-    <string name="hint_tiny_task">One tiny thing...</string>
-    <string name="label_when">When?</string>
+    <!-- Plan Editor / Routine Creator -->
+    <string name="title_create_routine">Create New Routine</string>
+    <string name="title_schedule_logic">Schedule Logic</string>
+    <string name="label_what_is_it">What is it?</string>
+    <string name="label_plan_type">Type</string>
+    <string name="label_mark_core">Mark as Core Routine</string>
+    <string name="label_anchor">Anchor</string>
+    <string name="label_frequency">Frequency</string>
+    <string name="label_time_window">Time Window</string>
+    <string name="label_repeats">Repeats</string>
+    <string name="label_start_time">Start Time</string>
+    <string name="label_end_time">End Time</string>
     
     <!-- Tidy Snap -->
     <string name="processing_vision">Breaking down into micro-tasks...</string>

@@ -32,5 +32,6 @@ data class PlanItemEntity(
     val endTimeMillis: Long?,
     val createdAt: Long = System.currentTimeMillis(),
     val originRef: String? = null, // e.g. tidySnapSessionId
-    val seriesId: String? = null   // Link to PlanSeriesEntity
+    val seriesId: String? = null,   // Link to PlanSeriesEntity
+    val snoozeUntil: Long? = null  // Instant.toEpochMilli() when snooze expires, null if not snoozed
 )

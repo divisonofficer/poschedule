@@ -7,7 +7,7 @@ import androidx.compose.material.icons.filled.NotificationsPaused
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -26,6 +26,39 @@ fun PlanActionBottomSheet(
     onDelete: (String) -> Unit,
     onStopSeries: (String) -> Unit
 ) {
+    var showStopConfirmation by remember { mutableStateOf(false) }
+
+    // Confirmation dialog for stopping recurring series
+    if (showStopConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showStopConfirmation = false },
+            title = { Text("Stop this routine?") },
+            text = {
+                Text(
+                    "This will stop all future occurrences of \"${item.title}\". " +
+                    "Past completions will be preserved.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showStopConfirmation = false
+                        onStopSeries(item.seriesId!!)
+                        onDismiss()
+                    }
+                ) {
+                    Text("Stop")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStopConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
@@ -69,7 +102,7 @@ fun PlanActionBottomSheet(
                     icon = Icons.Default.RemoveCircleOutline,
                     label = "Stop repeating this routine",
                     color = MaterialTheme.colorScheme.error,
-                    onClick = { onStopSeries(item.seriesId!!); onDismiss() }
+                    onClick = { showStopConfirmation = true }
                 )
             } else {
                 ActionRow(
