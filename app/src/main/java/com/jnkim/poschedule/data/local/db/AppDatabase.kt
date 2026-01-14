@@ -5,12 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.jnkim.poschedule.data.local.dao.PlanDao
 import com.jnkim.poschedule.data.local.dao.RoutineDao
-import com.jnkim.poschedule.data.local.entity.RoutineItemEntity
-import com.jnkim.poschedule.data.local.entity.RoutineLogEntity
-import com.jnkim.poschedule.data.local.entity.EventEntity
-import com.jnkim.poschedule.data.local.entity.NotificationStateEntity
-import com.jnkim.poschedule.data.local.entity.PlanDayEntity
-import com.jnkim.poschedule.data.local.entity.PlanItemEntity
+import com.jnkim.poschedule.data.local.entity.*
 
 @Database(
     entities = [
@@ -19,9 +14,11 @@ import com.jnkim.poschedule.data.local.entity.PlanItemEntity
         EventEntity::class,
         NotificationStateEntity::class,
         PlanDayEntity::class,
-        PlanItemEntity::class
+        PlanItemEntity::class,
+        PlanSeriesEntity::class,
+        PlanSeriesExceptionEntity::class
     ],
-    version = 3,
+    version = 4, // Increment version for schema changes
     exportSchema = false
 )
 @TypeConverters(Converters::class)

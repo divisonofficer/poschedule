@@ -1,5 +1,6 @@
 package com.jnkim.poschedule.ui.screens
 
+import android.content.Context
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -163,7 +164,7 @@ fun TidySnapScreen(
 }
 
 private fun takePhoto(
-    context: android.content.Context,
+    context: Context,
     imageCapture: ImageCapture,
     executor: Executor,
     onImageCaptured: (File) -> Unit

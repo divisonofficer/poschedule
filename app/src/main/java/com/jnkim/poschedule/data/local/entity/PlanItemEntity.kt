@@ -23,7 +23,7 @@ data class PlanItemEntity(
     @PrimaryKey val id: String,
     val date: String, // yyyy-MM-dd
     val title: String,
-    val type: RoutineType?, // Optional, for backward compatibility or categorization
+    val type: RoutineType?,
     val source: PlanItemSource,
     val window: PlanItemWindow,
     val status: String, // PENDING, DONE, SNOOZED, SKIPPED
@@ -31,5 +31,6 @@ data class PlanItemEntity(
     val startTimeMillis: Long?,
     val endTimeMillis: Long?,
     val createdAt: Long = System.currentTimeMillis(),
-    val originRef: String? = null // e.g. tidySnapSessionId
+    val originRef: String? = null, // e.g. tidySnapSessionId
+    val seriesId: String? = null   // Link to PlanSeriesEntity
 )

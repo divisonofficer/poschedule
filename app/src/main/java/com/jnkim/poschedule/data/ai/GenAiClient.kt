@@ -24,7 +24,7 @@ class GenAiClient @Inject constructor(
         val systemPrompt = promptManager.getGentleCopySystemPrompt(request.mode, request.userLocale)
 
         val rawResponse = genAiRepository.getCompletion(
-            prompt = "Generate a supportive message based on: ${request.completedTodayCount} done, ${request.pendingItemsCount} left.",
+            prompt = "Current State: ${request.completedTodayCount} tasks done, ${request.pendingItemsCount} remaining.",
             systemPrompt = systemPrompt
         )
 
@@ -32,19 +32,24 @@ class GenAiClient @Inject constructor(
             val parsed = json.decodeFromString<GentleCopyResponseStub>(rawResponse ?: "{}")
             GentleCopyResponse(parsed.title, parsed.body, "calm")
         } catch (e: Exception) {
-            // Return a default/fallback object that the UseCase will handle
-            GentleCopyResponse("Poschedule", "Just taking it one step at a time.", "calm")
+            GentleCopyResponse("Poschedule", "Taking it one step at a time.", "calm")
         }
     }
 
     /**
-     * Calls the real GenAI API to decompose a chore into micro-tasks.
+     * Calls the real Multi-modal pipeline to decompose a physical chore image.
      */
     suspend fun analyzeChoreImage(imageFile: File, lang: String = "en"): List<MicroChore> {
-        val systemPrompt = promptManager.getTidySnapSystemPrompt(lang)
+        // 1. Upload image to get URL
+        val imageUrl = genAiRepository.uploadFile(imageFile) ?: return emptyList()
 
+        // 2. Prepare Multi-modal Prompt
+        val systemPrompt = promptManager.getTidySnapSystemPrompt(lang)
+        val userPrompt = "Analyze this physical space: $imageUrl. Decompose the chores visible into 3 micro-tasks."
+
+        // 3. Get LLM Decomposition
         val rawResponse = genAiRepository.getCompletion(
-            prompt = "Analyze chore from image (placeholder: messy desk).", 
+            prompt = userPrompt,
             systemPrompt = systemPrompt
         )
 

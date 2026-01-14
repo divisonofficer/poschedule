@@ -52,7 +52,6 @@ class TodayViewModel @Inject constructor(
                     emit(planDay?.mode ?: Mode.NORMAL)
                 },
                 _systemMessage,
-                // Simple week density aggregator
                 combine(weekDates.map { planRepository.getPlanItems(it) }) { itemsArray ->
                     itemsArray.indices.associate { i -> 
                         LocalDate.parse(weekDates[i]) to itemsArray[i]
@@ -62,7 +61,7 @@ class TodayViewModel @Inject constructor(
                 TodayUiState(
                     planItems = items,
                     weekDensity = weekMap,
-                    monthDensity = weekMap.mapValues { it.value.size }, // Simplified for MVP
+                    monthDensity = weekMap.mapValues { it.value.size },
                     mode = mode,
                     systemMessageTitle = message.first,
                     systemMessageBody = message.second,
@@ -156,6 +155,26 @@ class TodayViewModel @Inject constructor(
     fun skipItem(id: String) {
         viewModelScope.launch {
             planRepository.updateItemStatus(id, "SKIPPED")
+            evaluateCurrentMode()
+        }
+    }
+
+    /**
+     * Slice 2: Remove only this occurrence
+     */
+    fun removeOccurrence(seriesId: String) {
+        viewModelScope.launch {
+            planRepository.removeOccurrence(seriesId, _selectedDate.value)
+            evaluateCurrentMode()
+        }
+    }
+
+    /**
+     * Slice 2: Stop entire series
+     */
+    fun stopSeries(seriesId: String) {
+        viewModelScope.launch {
+            planRepository.stopRepeatingSeries(seriesId, _selectedDate.value)
             evaluateCurrentMode()
         }
     }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.NotificationsPaused
+import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -22,7 +23,8 @@ fun PlanActionBottomSheet(
     onDismiss: () -> Unit,
     onSnooze: (String) -> Unit,
     onSkip: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onStopSeries: (String) -> Unit
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -43,7 +45,7 @@ fun PlanActionBottomSheet(
             )
             
             Text(
-                text = stringResource(R.string.desc_decomposed_tasks), // Reusing supportive text
+                text = "Adjusting your plan helps protect your mental energy.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
@@ -52,7 +54,7 @@ fun PlanActionBottomSheet(
 
             ActionRow(
                 icon = Icons.Default.NotificationsPaused,
-                label = "Snooze 15m", // TODO: Move to strings.xml
+                label = "Snooze 15m",
                 onClick = { onSnooze(item.id); onDismiss() }
             )
             
@@ -62,14 +64,21 @@ fun PlanActionBottomSheet(
                 onClick = { onSkip(item.id); onDismiss() }
             )
 
-            Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-
-            ActionRow(
-                icon = Icons.Default.Delete,
-                label = "Remove",
-                color = MaterialTheme.colorScheme.error,
-                onClick = { onDelete(item.id); onDismiss() }
-            )
+            if (item.seriesId != null) {
+                ActionRow(
+                    icon = Icons.Default.RemoveCircleOutline,
+                    label = "Stop repeating this routine",
+                    color = MaterialTheme.colorScheme.error,
+                    onClick = { onStopSeries(item.seriesId!!); onDismiss() }
+                )
+            } else {
+                ActionRow(
+                    icon = Icons.Default.Delete,
+                    label = "Remove task",
+                    color = MaterialTheme.colorScheme.error,
+                    onClick = { onDelete(item.id); onDismiss() }
+                )
+            }
         }
     }
 }

@@ -2,13 +2,7 @@ package com.jnkim.poschedule.data.remote.api
 
 import kotlinx.serialization.Serializable
 import okhttp3.MultipartBody
-import retrofit2.http.Body
-import retrofit2.http.Header
-import retrofit2.http.Multipart
-import retrofit2.http.POST
-import retrofit2.http.Part
-import retrofit2.http.Path
-import retrofit2.http.Query
+import retrofit2.http.*
 
 @Serializable
 data class GenAiRequest(
@@ -20,7 +14,7 @@ data class GenAiRequest(
 @Serializable
 data class GenAiMessage(
     val role: String,
-    val content: String // For multimodal, this might be a complex structure in some APIs
+    val content: String
 )
 
 @Serializable

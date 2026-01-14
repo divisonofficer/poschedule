@@ -1,19 +1,19 @@
 package com.jnkim.poschedule.data.local.dao
 
 import androidx.room.*
-import com.jnkim.poschedule.data.local.entity.PlanDayEntity
-import com.jnkim.poschedule.data.local.entity.PlanItemEntity
-import com.jnkim.poschedule.data.local.entity.PlanItemSource
+import com.jnkim.poschedule.data.local.entity.*
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PlanDao {
+    // --- PlanDay (OS Layer State) ---
     @Query("SELECT * FROM plan_days WHERE date = :date")
     suspend fun getPlanDay(date: String): PlanDayEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlanDay(planDay: PlanDayEntity)
 
+    // --- PlanInstance (Individual Occurrences) ---
     @Query("SELECT * FROM plan_items WHERE date = :date ORDER BY createdAt ASC")
     fun getPlanItems(date: String): Flow<List<PlanItemEntity>>
 
@@ -31,4 +31,24 @@ interface PlanDao {
 
     @Query("DELETE FROM plan_items WHERE date = :date AND source = :source")
     suspend fun deleteItemsBySource(date: String, source: PlanItemSource)
+
+    // --- PlanSeries (Recurrence Rules) ---
+    @Query("SELECT * FROM plan_series WHERE archived = 0")
+    suspend fun getAllActiveSeries(): List<PlanSeriesEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSeries(series: PlanSeriesEntity)
+
+    @Query("UPDATE plan_series SET archived = 1 WHERE id = :seriesId")
+    suspend fun archiveSeries(seriesId: String)
+
+    @Query("DELETE FROM plan_items WHERE seriesId = :seriesId AND date >= :fromDate")
+    suspend fun deleteFutureInstances(seriesId: String, fromDate: String)
+
+    // --- Exceptions (G2: Deletion Semantics) ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun addException(exception: PlanSeriesExceptionEntity)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM plan_series_exceptions WHERE seriesId = :seriesId AND date = :date)")
+    suspend fun isExcluded(seriesId: String, date: String): Boolean
 }
