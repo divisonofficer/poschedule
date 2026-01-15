@@ -10,54 +10,76 @@ import javax.inject.Singleton
 data class GentleCopyRequest(
     val mode: Mode,
     val pendingItemsCount: Int,
-    val completedTodayCount: Int
+    val completedTodayCount: Int,
+    val notificationBudgetUsed: Int,
+    val notificationBudgetTotal: Int,
+    val todayWindows: List<String>,  // Titles of today's plan items
+    val recentActions: Map<String, Int>  // Counts by status (DONE/SNOOZED/SKIPPED)
 )
 
 @Singleton
 class GentleCopyUseCase @Inject constructor(
     private val settingsRepository: SettingsRepository,
-    private val tokenManager: AuthTokenManager
+    private val tokenManager: AuthTokenManager,
+    private val genAiClient: com.jnkim.poschedule.data.ai.GenAiClient  // NEW DEPENDENCY
 ) {
+    // In-memory cache: key = "$date-$mode", value = (response, timestamp)
+    private val messageCache = mutableMapOf<String, Pair<GentleCopyResponse, Long>>()
+
+    private fun getCacheKey(date: String, mode: Mode): String = "$date-$mode"
+
+    private fun getCached(date: String, mode: Mode): GentleCopyResponse? {
+        val key = getCacheKey(date, mode)
+        val (response, timestamp) = messageCache[key] ?: return null
+
+        // Cache valid until day boundary
+        val now = System.currentTimeMillis()
+        val dayBoundary = java.time.LocalDate.now()
+            .plusDays(1)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+
+        return if (now < dayBoundary) response else {
+            messageCache.remove(key)
+            null
+        }
+    }
+
+    private fun putCache(date: String, mode: Mode, response: GentleCopyResponse) {
+        val key = getCacheKey(date, mode)
+        messageCache[key] = response to System.currentTimeMillis()
+    }
+
     suspend fun generateMessage(request: GentleCopyRequest): GentleCopyResponse {
         val settings = settingsRepository.settingsFlow.first()
-        val language = settings.language // Use the app-internal setting
-        
+        val language = settings.language
+        val today = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+
+        // Check cache first
+        getCached(today, request.mode)?.let {
+            android.util.Log.d("GentleCopy", "Cache hit for $today-${request.mode}")
+            return it
+        }
+
         // Safety Gate: Check if AI is enabled and API key exists
         if (!settings.aiEnabled || tokenManager.getApiKey() == null) {
+            android.util.Log.d("GentleCopy", "Safety gate: AI=${settings.aiEnabled}, Key=${tokenManager.getApiKey() != null}")
             return getFallbackMessage(request.mode, language)
         }
 
-        // Pass the app-specific language to the simulated/real generator
-        return getSimulatedAiMessage(request, language)
-    }
-
-    private fun getSimulatedAiMessage(request: GentleCopyRequest, language: String): GentleCopyResponse {
-        val isKo = language == "ko"
-        return when (request.mode) {
-            Mode.RECOVERY -> GentleCopyResponse(
-                if (isKo) "잠시 숨 고르기" else "A small breath",
-                if (isKo) "오늘 벌써 ${request.completedTodayCount}개의 일을 해내셨네요. 나머지는 천천히 해도 괜찮아요." 
-                else "You've completed ${request.completedTodayCount} things. It's okay to let the other ${request.pendingItemsCount} wait.",
-                "calm"
-            )
-            Mode.LOW_MOOD -> GentleCopyResponse(
-                if (isKo) "친절한 한 걸음" else "Kindness first",
-                if (isKo) "천천히 가도 괜찮습니다. 당신의 속도에 맞춰 작은 일 하나부터 시작해봐요."
-                else "It's okay to take it slow. Just one tiny step at your own pace.",
-                "calm"
-            )
-            Mode.BUSY -> GentleCopyResponse(
-                if (isKo) "집중 모드" else "Focus Mode",
-                if (isKo) "불필요한 알림을 줄였습니다. 핵심 루틴에만 집중하세요."
-                else "Notifications reduced. Focus on your core routines for now.",
-                "firm"
-            )
-            Mode.NORMAL -> GentleCopyResponse(
-                if (isKo) "시스템 안정" else "System Stable",
-                if (isKo) "오늘 계획대로 잘 진행되고 있습니다. 다음 단계는 무엇인가요?"
-                else "The day is moving well. You've completed ${request.completedTodayCount} tasks. What's next?",
-                "calm"
-            )
+        // Call real API via GenAiClient
+        return try {
+            android.util.Log.d("GentleCopy", "Calling real API for mode=${request.mode}")
+            val response = genAiClient.generateGentleCopy(request)
+            // Cache successful response
+            putCache(today, request.mode, response)
+            android.util.Log.d("GentleCopy", "API success, cached response")
+            response
+        } catch (e: Exception) {
+            // Fallback on any error (network, parsing, 401, 429, etc.)
+            android.util.Log.w("GentleCopyUseCase", "LLM call failed, using fallback", e)
+            getFallbackMessage(request.mode, language)
         }
     }
 
@@ -91,5 +113,6 @@ class GentleCopyUseCase @Inject constructor(
 data class GentleCopyResponse(
     val title: String,
     val body: String,
-    val tone: String
+    val tone: String,
+    val safetyTag: String? = null  // Optional safety flag
 )

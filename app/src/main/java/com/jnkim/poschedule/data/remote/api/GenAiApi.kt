@@ -5,20 +5,12 @@ import kotlinx.serialization.Serializable
 import okhttp3.MultipartBody
 import retrofit2.http.*
 
+// New simplified API format for /agent/api endpoints
 @Serializable
 data class GenAiRequest(
-    val messages: List<GenAiMessage>,
-    val temperature: Float = 0.7f,
-    val response_format: String? = "json",
-    val files: List<GenAiFile> = emptyList(),
-    @SerialName("chat_threads_id") val chatThreadsId: String? = null,
-    @SerialName("chat_room_id") val chatRoomsId: String? = null
-)
-
-@Serializable
-data class GenAiMessage(
-    val role: String,
-    val content: String
+    val message: String,
+    val stream: Boolean = false,
+    val files: List<GenAiFile> = emptyList()
 )
 
 @Serializable
@@ -30,12 +22,7 @@ data class GenAiFile(
 
 @Serializable
 data class GenAiResponse(
-    val choices: List<GenAiChoice>
-)
-
-@Serializable
-data class GenAiChoice(
-    val message: GenAiMessage
+    val replies: String
 )
 
 @Serializable
@@ -50,22 +37,67 @@ data class FileData(
     @SerialName("file_url") val fileUrl: String
 )
 
+@Serializable
+data class ApiKeysResponse(
+    val code: String,
+    val message: String? = null,
+    val data: List<ApiKeyData>
+)
+
+@Serializable
+data class ApiKeyData(
+    val id: Int,
+    val rawApiKey: String,
+    val apiKeyPreview: String,
+    val createdAt: String
+)
+
 interface GenAiApi {
-    @POST("v2/athena/chats/{model}/completions")
+    /**
+     * Chat completion using the agent API.
+     * Supports: a1/gpt, a2/gemini, a3/claude
+     * Default: a3/claude (Claude model)
+     *
+     * IMPORTANT: Only uses X-API-Key (NOT Authorization)
+     * IMPORTANT: Origin, Referer, and User-Agent headers are required for authentication
+     */
+    @POST("agent/api/{model}")
     suspend fun getCompletion(
-        @Path("model") model: String = "m1",
+        @Path("model") model: String = "a3/claude",
         @Query("site_name") siteName: String,
-        @Header("Authorization") bearerToken: String,
         @Header("X-API-Key") apiKey: String,
+        @Header("Origin") origin: String = "https://genai.postech.ac.kr",
+        @Header("Referer") referer: String = "https://genai.postech.ac.kr/",
+        @Header("User-Agent") userAgent: String = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
         @Body request: GenAiRequest
     ): GenAiResponse
 
+    /**
+     * Upload file for multi-modal analysis.
+     *
+     * IMPORTANT: Origin, Referer, and User-Agent headers are required for authentication
+     */
     @Multipart
     @POST("v2/athena/chats/{model}/files")
     suspend fun uploadFile(
         @Path("model") model: String = "m1",
         @Query("site_name") siteName: String,
         @Header("Authorization") bearerToken: String,
+        @Header("Origin") origin: String = "https://genai.postech.ac.kr",
+        @Header("Referer") referer: String = "https://genai.postech.ac.kr/",
+        @Header("User-Agent") userAgent: String = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
         @Part file: MultipartBody.Part
     ): FileUploadResponse
+
+    /**
+     * Retrieves user API keys from the GenAI server.
+     *
+     * IMPORTANT: Uses Authorization header (NOT X-API-Key)
+     * IMPORTANT: Referer header is required
+     */
+    @GET("v2/datahub/user-api-keys")
+    suspend fun getUserApiKeys(
+        @Header("Authorization") bearerToken: String,
+        @Header("Referer") referer: String = "https://genai.postech.ac.kr/"
+    ): ApiKeysResponse
 }

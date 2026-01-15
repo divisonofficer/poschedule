@@ -26,7 +26,26 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
-        return OkHttpClient.Builder().build()
+        return OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val response = chain.proceed(request)
+
+                // Log response body
+                val responseBody = response.body
+                val source = responseBody?.source()
+                source?.request(Long.MAX_VALUE) // Buffer the entire body
+                val buffer = source?.buffer
+
+                val responseBodyString = buffer?.clone()?.readUtf8() ?: ""
+                android.util.Log.d("OkHttp", "Response from ${request.url}: $responseBodyString")
+
+                response
+            }
+            .build()
     }
 
     @Provides

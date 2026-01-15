@@ -26,7 +26,8 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val repository: SettingsRepository,
     private val tokenManager: AuthTokenManager,
-    private val planRepository: PlanRepository
+    private val planRepository: PlanRepository,
+    private val genAiRepository: com.jnkim.poschedule.data.repo.GenAiRepository
 ) : ViewModel() {
 
     val settings: StateFlow<UserSettings?> = repository.settingsFlow.stateIn(
@@ -60,10 +61,14 @@ class SettingsViewModel @Inject constructor(
 
     fun fetchApiKey() {
         viewModelScope.launch {
-            val token = tokenManager.getAccessToken()
-            if (token != null) {
-                tokenManager.saveApiKey("sk-simulated-${System.currentTimeMillis()}")
+            android.util.Log.d("SettingsViewModel", "Fetching API key from server...")
+            val apiKey = genAiRepository.fetchAndCacheApiKey()
+            if (apiKey != null) {
+                android.util.Log.d("SettingsViewModel", "API key fetched successfully")
                 _isApiKeyPresent.value = true
+            } else {
+                android.util.Log.e("SettingsViewModel", "Failed to fetch API key. Check logs for details.")
+                _isApiKeyPresent.value = false
             }
         }
     }

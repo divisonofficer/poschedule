@@ -1,5 +1,6 @@
 package com.jnkim.poschedule.ui.screens
 
+import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -9,6 +10,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -42,7 +44,9 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.*
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -62,8 +66,11 @@ import com.jnkim.poschedule.domain.model.RoutineType
 import com.jnkim.poschedule.domain.model.WeatherState
 import com.jnkim.poschedule.ui.components.*
 import com.jnkim.poschedule.ui.theme.*
+import com.jnkim.poschedule.ui.viewmodel.LLMNormalizerState
 import com.jnkim.poschedule.ui.viewmodel.TodayUiState
 import com.jnkim.poschedule.ui.viewmodel.TodayViewModel
+import android.widget.Toast
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.jnkim.poschedule.workers.DailyPlanWorker
 import java.time.Instant
 import java.time.LocalDate
@@ -72,6 +79,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.*
+import kotlin.math.abs
 
 enum class CalendarZoom {
     DAY, WEEK, MONTH
@@ -103,6 +111,7 @@ private fun getWeatherIcon(weather: WeatherState): androidx.compose.ui.graphics.
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodayScreen(
     viewModel: TodayViewModel,
@@ -112,16 +121,24 @@ fun TodayScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val settings by settingsRepository.settingsFlow.collectAsState(initial = null)
+    val llmState by viewModel.llmNormalizerState.collectAsState()
+    val fabMenuExpanded by viewModel.fabMenuExpanded.collectAsState()
+
     var showAddSheet by remember { mutableStateOf(false) }
+    var showLLMInput by remember { mutableStateOf(false) }
+    var showFabMenu by remember { mutableStateOf(false) }
     var selectedDate by remember { mutableStateOf<LocalDate>(LocalDate.now()) }
     var zoomLevel by remember { mutableStateOf<CalendarZoom>(CalendarZoom.DAY) }
     var selectedItemForActions by remember { mutableStateOf<PlanItemEntity?>(null) }
+
+    val context = LocalContext.current
 
     LaunchedEffect(selectedDate) {
         viewModel.onDateSelected(selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE))
     }
 
     TodayContent(
+        viewModel = viewModel,
         uiState = uiState,
         settings = settings,
         selectedDate = selectedDate,
@@ -134,8 +151,25 @@ fun TodayScreen(
         onPlanItemSkip = { id -> viewModel.skipItem(id) },
         onNavigateToSettings = onNavigateToSettings,
         onNavigateToTidySnap = onNavigateToTidySnap,
-        onAddClick = { showAddSheet = true }
+        onNaturalLanguageClick = { showLLMInput = true },
+        onClassicFormClick = { showAddSheet = true }
     )
+
+    // FAB Menu (Natural Language vs Classic Form)
+    // Scrim for FAB menu
+    if (showFabMenu) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.3f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    showFabMenu = false
+                }
+        )
+    }
 
     if (showAddSheet) {
         PlanEditorSheet(
@@ -157,7 +191,7 @@ fun TodayScreen(
             onDismiss = { selectedItemForActions = null },
             onSnooze = { id -> viewModel.snoozeItem(id) },
             onSkip = { id -> viewModel.skipItem(id) },
-            onDelete = { id -> 
+            onDelete = { id ->
                 if (item.seriesId != null) {
                     viewModel.removeOccurrence(item.seriesId!!)
                 } else {
@@ -167,10 +201,92 @@ fun TodayScreen(
             onStopSeries = { seriesId -> viewModel.stopSeries(seriesId) }
         )
     }
+
+    // LLM Input Flow
+    if (showLLMInput) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showLLMInput = false
+                viewModel.resetLLMState()
+            },
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+        ) {
+            when (llmState) {
+                is LLMNormalizerState.Idle -> {
+                    LLMTaskAddSheet(
+                        onDismiss = {
+                            showLLMInput = false
+                            viewModel.resetLLMState()
+                        },
+                        onSubmit = { userInput ->
+                            viewModel.normalizeTaskWithLLM(userInput)
+                        },
+                        isLoading = false
+                    )
+                }
+                is LLMNormalizerState.Loading -> {
+                    LLMTaskAddSheet(
+                        onDismiss = { /* Block dismissal during loading */ },
+                        onSubmit = { /* No-op during loading */ },
+                        isLoading = true
+                    )
+                }
+                is LLMNormalizerState.Success -> {
+                    val response = (llmState as LLMNormalizerState.Success).response
+                    response.plan?.let { plan ->
+                        PlanReviewSheet(
+                            normalizedPlan = plan,
+                            confidence = response.confidence,
+                            onConfirm = {
+                                viewModel.confirmLLMPlanAndSave(plan)
+                                showLLMInput = false
+                            },
+                            onEdit = {
+                                showLLMInput = false
+                                viewModel.resetLLMState()
+                                showAddSheet = true
+                            },
+                            onCancel = {
+                                showLLMInput = false
+                                viewModel.resetLLMState()
+                            }
+                        )
+                    }
+                }
+                is LLMNormalizerState.Clarification -> {
+                    // For MVP: Fall back to classic form with toast message
+                    LaunchedEffect(Unit) {
+                        Toast.makeText(
+                            context,
+                            "Could not understand input clearly. Please try the classic form.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        showLLMInput = false
+                        viewModel.resetLLMState()
+                        showAddSheet = true
+                    }
+                }
+                is LLMNormalizerState.Error -> {
+                    val errorMessage = (llmState as LLMNormalizerState.Error).message
+                    LaunchedEffect(Unit) {
+                        Toast.makeText(
+                            context,
+                            "Error: $errorMessage",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        showLLMInput = false
+                        viewModel.resetLLMState()
+                        showAddSheet = true
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
 fun TodayContent(
+    viewModel: TodayViewModel,
     uiState: TodayUiState,
     settings: com.jnkim.poschedule.data.repo.UserSettings?,
     selectedDate: LocalDate,
@@ -183,8 +299,10 @@ fun TodayContent(
     onPlanItemSkip: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToTidySnap: () -> Unit,
-    onAddClick: () -> Unit
+    onNaturalLanguageClick: () -> Unit,
+    onClassicFormClick: () -> Unit
 ) {
+    val fabMenuExpanded by viewModel.fabMenuExpanded.collectAsState()
     val context = LocalContext.current
     val accentColor by animateColorAsState(
         targetValue = when (uiState.mode) {
@@ -198,135 +316,131 @@ fun TodayContent(
 
     val listState = rememberLazyListState()
 
-    // Track animation state to prevent gesture conflicts
-    var isAnimating by remember { mutableStateOf(false) }
-
-    // Track drag state for manual gestures
-    var dragOffset by remember { mutableStateOf(0f) }
-    val dragThreshold = 100f
-
-    // NestedScrollConnection to intercept scroll gestures when Week/Month view is open
-    val nestedScrollConnection = remember(zoomLevel, isAnimating) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // Block gestures during animation or when in DAY mode
-                if (zoomLevel == CalendarZoom.DAY || isAnimating) return Offset.Zero
-
-                // Accumulate vertical scroll
-                dragOffset += available.y
-
-                // Check if threshold is reached
-                when {
-                    // Scrolling up (negative offset) - close the view
-                    dragOffset < -dragThreshold -> {
-                        isAnimating = true
-                        when (zoomLevel) {
-                            CalendarZoom.MONTH -> onZoomChange(CalendarZoom.WEEK)
-                            CalendarZoom.WEEK -> onZoomChange(CalendarZoom.DAY)
-                            else -> {}
-                        }
-                        dragOffset = 0f
-                        return available // Consume the scroll
-                    }
-                    // Scrolling down (positive offset) - expand the view
-                    dragOffset > dragThreshold -> {
-                        isAnimating = true
-                        when (zoomLevel) {
-                            CalendarZoom.WEEK -> onZoomChange(CalendarZoom.MONTH)
-                            else -> {}
-                        }
-                        dragOffset = 0f
-                        return available // Consume the scroll
-                    }
-                }
-
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset {
-                // Reset offset when scrolling stops
-                if (available == Offset.Zero && consumed == Offset.Zero) {
-                    dragOffset = 0f
-                }
-                return Offset.Zero
-            }
-        }
-    }
-
-    // Draggable state for header (DAY mode) and Week/Month overview
-    val draggableState = rememberDraggableState { delta ->
-        if (!isAnimating) {
-            dragOffset += delta
-        }
-    }
-
-    // Gesture modifier for header (opens Week view from DAY mode)
-    val headerGestureModifier = Modifier.draggable(
-        state = draggableState,
-        orientation = Orientation.Vertical,
-        onDragStopped = {
-            if (!isAnimating && zoomLevel == CalendarZoom.DAY && dragOffset > dragThreshold) {
-                isAnimating = true
-                onZoomChange(CalendarZoom.WEEK)
-            }
-            dragOffset = 0f
-        }
-    )
-
-    // Gesture modifier for Week/Month overview (expand/collapse)
-    val overviewGestureModifier = Modifier.draggable(
-        state = draggableState,
-        orientation = Orientation.Vertical,
-        onDragStopped = {
-            if (!isAnimating) {
-                when {
-                    // Swipe down - expand or do nothing
-                    dragOffset > dragThreshold -> {
-                        isAnimating = true
-                        when (zoomLevel) {
-                            CalendarZoom.WEEK -> onZoomChange(CalendarZoom.MONTH)
-                            else -> {}
-                        }
-                    }
-                    // Swipe up - collapse
-                    dragOffset < -dragThreshold -> {
-                        isAnimating = true
-                        when (zoomLevel) {
-                            CalendarZoom.MONTH -> onZoomChange(CalendarZoom.WEEK)
-                            CalendarZoom.WEEK -> onZoomChange(CalendarZoom.DAY)
-                            else -> {}
-                        }
-                    }
-                }
-            }
-            dragOffset = 0f
-        }
-    )
-
     Scaffold(
         floatingActionButton = {
             if (zoomLevel == CalendarZoom.DAY) {
-                Column(horizontalAlignment = Alignment.End) {
-                    SmallFloatingActionButton(
-                        onClick = onNavigateToTidySnap,
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        shape = CircleShape
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Expandable menu items
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = fabMenuExpanded,
+                        enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                        exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
                     ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = stringResource(R.string.title_tidy_snap))
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Natural Language FAB
+                            Row(
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.Surface(
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shadowElevation = 4.dp,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "Natural Language",
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        viewModel.setFabMenuExpanded(false)
+                                        onNaturalLanguageClick()
+                                    },
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    shape = CircleShape
+                                ) {
+                                    Icon(Icons.Default.ChatBubble, contentDescription = "Natural Language")
+                                }
+                            }
+
+                            // Classic Form FAB
+                            Row(
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.Surface(
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shadowElevation = 4.dp,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "Classic Form",
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        viewModel.setFabMenuExpanded(false)
+                                        onClassicFormClick()
+                                    },
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    shape = CircleShape
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Classic Form")
+                                }
+                            }
+
+                            // Tidy Camera FAB
+                            Row(
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.Surface(
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shadowElevation = 4.dp,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "Tidy Camera",
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        viewModel.setFabMenuExpanded(false)
+                                        onNavigateToTidySnap()
+                                    },
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    shape = CircleShape
+                                ) {
+                                    Icon(Icons.Default.CameraAlt, contentDescription = stringResource(R.string.title_tidy_snap))
+                                }
+                            }
+                        }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Main FAB
                     FloatingActionButton(
-                        onClick = onAddClick,
+                        onClick = { viewModel.toggleFabMenu() },
                         containerColor = accentColor.copy(alpha = 0.8f),
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         shape = CircleShape
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.title_create_routine))
+                        androidx.compose.animation.AnimatedContent(
+                            targetState = fabMenuExpanded,
+                            label = "FAB icon animation"
+                        ) { expanded ->
+                            Icon(
+                                imageVector = if (expanded) Icons.Default.Close else Icons.Default.Add,
+                                contentDescription = if (expanded) "Close menu" else stringResource(R.string.title_create_routine)
+                            )
+                        }
                     }
                 }
             }
@@ -338,13 +452,51 @@ fun TodayContent(
                     .fillMaxSize()
                     .padding(innerPadding)
                     .statusBarsPadding()
-                    .nestedScroll(nestedScrollConnection)
+                    .pointerInput(zoomLevel) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var totalDragY = 0f
+
+                            Log.d("TodayGesture", "Touch down at ${down.position}, zoomLevel=$zoomLevel")
+
+                            do {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+
+                                if (change.pressed) {
+                                    val deltaY = change.position.y - change.previousPosition.y
+                                    totalDragY += deltaY
+                                }
+                            } while (change.pressed)
+
+                            Log.d("TodayGesture", "Touch up, totalDragY=$totalDragY, zoomLevel=$zoomLevel")
+
+                            // Threshold: 120px
+                            when {
+                                totalDragY < -120f -> {
+                                    Log.d("TodayGesture", "Swipe up detected")
+                                    when (zoomLevel) {
+                                        CalendarZoom.MONTH -> onZoomChange(CalendarZoom.WEEK)
+                                        CalendarZoom.WEEK -> onZoomChange(CalendarZoom.DAY)
+                                        else -> {}
+                                    }
+                                }
+                                totalDragY > 120f -> {
+                                    Log.d("TodayGesture", "Swipe down detected")
+                                    when (zoomLevel) {
+                                        CalendarZoom.DAY -> onZoomChange(CalendarZoom.WEEK)
+                                        CalendarZoom.WEEK -> onZoomChange(CalendarZoom.MONTH)
+                                        else -> {}
+                                    }
+                                }
+                            }
+                        }
+                    }
             ) {
                 // Header (Today / Date Title)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(headerGestureModifier)
                         .padding(horizontal = 24.dp, vertical = 16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -426,45 +578,12 @@ fun TodayContent(
                         enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
                         exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeOut()
                     ) {
-                        // Reset animation flag when animation completes
-                        LaunchedEffect(transition.currentState, transition.targetState) {
-                            if (transition.currentState == transition.targetState) {
-                                isAnimating = false
-                            }
-                        }
-
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            when (zoomLevel) {
-                                CalendarZoom.WEEK -> {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .pointerInput(isAnimating) {
-                                                if (isAnimating) return@pointerInput
-
-                                                var totalDragOffset = 0f
-
-                                                detectDragGestures(
-                                                    onDragStart = { totalDragOffset = 0f },
-                                                    onDragEnd = {
-                                                        if (totalDragOffset > dragThreshold) {
-                                                            // Swipe down - expand to Month
-                                                            isAnimating = true
-                                                            onZoomChange(CalendarZoom.MONTH)
-                                                        } else if (totalDragOffset < -dragThreshold) {
-                                                            // Swipe up - collapse to Day
-                                                            isAnimating = true
-                                                            onZoomChange(CalendarZoom.DAY)
-                                                        }
-                                                        totalDragOffset = 0f
-                                                    },
-                                                    onDrag = { change, dragAmount ->
-                                                        totalDragOffset += dragAmount.y
-                                                        change.consume()
-                                                    }
-                                                )
-                                            }
-                                    ) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                when (zoomLevel) {
+                                    CalendarZoom.WEEK -> {
                                         WeekOverviewGrid(
                                             weekStart = selectedDate.minusDays(selectedDate.dayOfWeek.value.toLong() % 7),
                                             itemsByDay = uiState.weekDensity,
@@ -472,33 +591,7 @@ fun TodayContent(
                                             accentColor = accentColor
                                         )
                                     }
-                                }
-                                CalendarZoom.MONTH -> {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .pointerInput(isAnimating) {
-                                                if (isAnimating) return@pointerInput
-
-                                                var totalDragOffset = 0f
-
-                                                detectDragGestures(
-                                                    onDragStart = { totalDragOffset = 0f },
-                                                    onDragEnd = {
-                                                        if (totalDragOffset < -dragThreshold) {
-                                                            // Swipe up - collapse to Week
-                                                            isAnimating = true
-                                                            onZoomChange(CalendarZoom.WEEK)
-                                                        }
-                                                        totalDragOffset = 0f
-                                                    },
-                                                    onDrag = { change, dragAmount ->
-                                                        totalDragOffset += dragAmount.y
-                                                        change.consume()
-                                                    }
-                                                )
-                                            }
-                                    ) {
+                                    CalendarZoom.MONTH -> {
                                         MonthViewHeatmap(
                                             currentMonth = YearMonth.from(selectedDate),
                                             itemsByDay = uiState.monthDensity,
@@ -506,8 +599,8 @@ fun TodayContent(
                                             accentColor = accentColor
                                         )
                                     }
+                                    else -> {}
                                 }
-                                else -> {}
                             }
                         }
                     }
@@ -522,16 +615,7 @@ fun TodayContent(
                             enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
                             exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeOut()
                         ) {
-                            // Reset animation flag when animation completes
-                            LaunchedEffect(transition.currentState, transition.targetState) {
-                                if (transition.currentState == transition.targetState) {
-                                    isAnimating = false
-                                }
-                            }
-
-                            Box(modifier = headerGestureModifier) {
-                                HorizontalDateSelector(selectedDate, onDateSelected, accentColor)
-                            }
+                            HorizontalDateSelector(selectedDate, onDateSelected, accentColor)
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                         LazyColumn(
@@ -1096,6 +1180,10 @@ fun PlanItemOrbCard(
     val skipped = item.status == "SKIPPED"
     val snoozed = item.status == "SNOOZED"
 
+    // Check if item is overdue (past end time but not done)
+    val isOverdue = !completed && !skipped && item.endTimeMillis != null &&
+                    System.currentTimeMillis() > item.endTimeMillis
+
     val scale by animateFloatAsState(if (completed) 0.98f else 1f)
     val alpha by animateFloatAsState(
         targetValue = when {
@@ -1105,11 +1193,6 @@ fun PlanItemOrbCard(
         }
     )
     val haptics = LocalHapticFeedback.current
-
-    val glowAlpha by animateFloatAsState(
-        targetValue = if (completed || skipped) 0f else 0.3f,
-        animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse)
-    )
 
     val icon = when (item.type) {
         RoutineType.MEDS_AM, RoutineType.MEDS_PM -> "💊"
@@ -1121,20 +1204,25 @@ fun PlanItemOrbCard(
         null -> if (item.source == PlanItemSource.MANUAL) "✨" else "📝"
     }
 
-    GlassCard(
-        modifier = Modifier
+    // Apply very subtle orange tint for overdue items
+    val cardModifier = if (isOverdue) {
+        Modifier
             .fillMaxWidth()
             .scale(scale)
             .alpha(alpha)
-            .drawBehind {
-                if (!completed && !skipped && item.isCore) {
-                    drawCircle(
-                        color = accentColor.copy(alpha = glowAlpha),
-                        radius = size.minDimension / 1.5f,
-                        style = Stroke(width = 2.dp.toPx())
-                    )
-                }
-            }
+            .background(
+                color = Color(0xFFFF9800).copy(alpha = 0.03f),
+                shape = RoundedCornerShape(24.dp)
+            )
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .alpha(alpha)
+    }
+
+    GlassCard(
+        modifier = cardModifier
             .combinedClickable(
                 onClick = { onCheckedChange(item.id, !completed) },
                 onLongClick = {

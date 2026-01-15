@@ -89,4 +89,16 @@
     <string name="channel_core_desc">약 복용, 식사 등 중요한 일일 과업</string>
     <string name="channel_updates_name">일정 업데이트</string>
     <string name="channel_recovery_name">회복 지원</string>
+
+    <!-- Widget -->
+    <string name="widget_description">다음 대기 중인 작업과 빠른 작업 버튼을 표시합니다</string>
+
+    <!-- LLM Task Creation (Korean) -->
+    <string name="llm_task_input_title">일정 설명하기</string>
+    <string name="llm_task_input_placeholder">예: "기상 후 30분에 아침 약 먹기" 또는 "매주 월수금 저녁 7시 운동"</string>
+    <string name="llm_review_title">일정 확인</string>
+    <string name="llm_low_confidence_warning">정확히 이해했는지 확신이 없습니다. 검토해 주세요.</string>
+    <string name="action_analyze">분석</string>
+    <string name="action_edit_manually">직접 수정</string>
+    <string name="action_confirm_save">저장</string>
 </resources>
