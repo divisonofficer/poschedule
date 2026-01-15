@@ -1,8 +1,13 @@
 package com.jnkim.poschedule.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -12,24 +17,60 @@ import androidx.compose.ui.unit.dp
 import com.jnkim.poschedule.R
 import com.jnkim.poschedule.data.ai.AlternativePlan
 import com.jnkim.poschedule.data.ai.NormalizedPlan
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /**
  * Review sheet for LLM-normalized plan.
  * Shows parsed plan details with confidence warning if needed.
  * Allows selecting additional alternatives to save together.
+ * For one-time events with specificDate, allows editing date and time.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlanReviewSheet(
     normalizedPlan: NormalizedPlan,
     confidence: Double,
     alternatives: List<AlternativePlan> = emptyList(),
-    onConfirm: (List<AlternativePlan>) -> Unit,
+    onConfirm: (NormalizedPlan, List<NormalizedPlan>) -> Unit,
     onEdit: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Track which alternatives are selected (all selected by default)
     var selectedAlternatives by remember { mutableStateOf(alternatives.toSet()) }
+
+    // Editable plan (for date/time modifications)
+    var editablePlan by remember { mutableStateOf(normalizedPlan) }
+
+    // Convert alternatives to editable full plans (inheriting main plan's time/date)
+    var editableAlternatives by remember {
+        mutableStateOf(
+            alternatives.associateWith { alt ->
+                NormalizedPlan(
+                    title = alt.title,
+                    planType = alt.planType,
+                    routineType = alt.routineType,
+                    iconEmoji = alt.iconEmoji,
+                    importance = "MEDIUM",
+                    time = normalizedPlan.time,
+                    recurrence = normalizedPlan.recurrence,
+                    specificDate = normalizedPlan.specificDate,
+                    note = null
+                )
+            }
+        )
+    }
+
+    // Date/Time picker states
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    var editingAlternative by remember { mutableStateOf<AlternativePlan?>(null) }
+
+    // Check if this is a one-time event
+    val isOneTimeEvent = editablePlan.recurrence.kind.uppercase() == "NONE" &&
+                         editablePlan.specificDate != null
 
     Column(
         modifier = modifier
@@ -56,7 +97,12 @@ fun PlanReviewSheet(
             color = MaterialTheme.colorScheme.primary
         )
         Spacer(modifier = Modifier.height(4.dp))
-        PlanDetailCard(normalizedPlan)
+        PlanDetailCard(
+            plan = editablePlan,
+            isEditable = isOneTimeEvent,
+            onDateClick = { showDatePicker = true },
+            onTimeClick = { showTimePicker = true }
+        )
 
         // Display alternatives if any
         if (alternatives.isNotEmpty()) {
@@ -69,15 +115,25 @@ fun PlanReviewSheet(
             Spacer(modifier = Modifier.height(8.dp))
 
             alternatives.forEach { alt ->
-                AlternativeCheckbox(
+                AlternativeCard(
                     alternative = alt,
+                    editablePlan = editableAlternatives[alt]!!,
                     isSelected = selectedAlternatives.contains(alt),
+                    isEditable = isOneTimeEvent,
                     onToggle = {
                         selectedAlternatives = if (selectedAlternatives.contains(alt)) {
                             selectedAlternatives - alt
                         } else {
                             selectedAlternatives + alt
                         }
+                    },
+                    onDateClick = {
+                        editingAlternative = alt
+                        showDatePicker = true
+                    },
+                    onTimeClick = {
+                        editingAlternative = alt
+                        showTimePicker = true
                     }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -103,12 +159,143 @@ fun PlanReviewSheet(
                     Text(stringResource(R.string.action_edit_manually))
                 }
 
-                Button(onClick = { onConfirm(selectedAlternatives.toList()) }) {
+                Button(onClick = {
+                    // Pass edited versions of selected alternatives
+                    val editedAlts = selectedAlternatives.mapNotNull { alt ->
+                        editableAlternatives[alt]
+                    }
+                    onConfirm(editablePlan, editedAlts)
+                }) {
                     val totalTasks = 1 + selectedAlternatives.size
                     Text(stringResource(R.string.action_confirm_save) + " ($totalTasks)")
                 }
             }
         }
+    }
+
+    // Date Picker Dialog
+    if (showDatePicker) {
+        val currentPlan = editingAlternative?.let { editableAlternatives[it] } ?: editablePlan
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = currentPlan.specificDate?.let {
+                try {
+                    LocalDate.parse(it, DateTimeFormatter.ISO_LOCAL_DATE)
+                        .atStartOfDay(java.time.ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli()
+                } catch (e: Exception) {
+                    System.currentTimeMillis()
+                }
+            } ?: System.currentTimeMillis()
+        )
+
+        DatePickerDialog(
+            onDismissRequest = {
+                showDatePicker = false
+                editingAlternative = null
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        val selectedDate = java.time.Instant
+                            .ofEpochMilli(millis)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDate()
+                        val newDateStr = selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
+
+                        if (editingAlternative != null) {
+                            // Update alternative
+                            editableAlternatives = editableAlternatives.mapValues { (key, plan) ->
+                                if (key == editingAlternative) {
+                                    plan.copy(specificDate = newDateStr)
+                                } else {
+                                    plan
+                                }
+                            }
+                        } else {
+                            // Update main plan
+                            editablePlan = editablePlan.copy(specificDate = newDateStr)
+                        }
+                    }
+                    showDatePicker = false
+                    editingAlternative = null
+                }) {
+                    Text("확인")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showDatePicker = false
+                    editingAlternative = null
+                }) {
+                    Text("취소")
+                }
+            },
+            colors = DatePickerDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    // Time Picker Dialog
+    if (showTimePicker) {
+        val currentPlan = editingAlternative?.let { editableAlternatives[it] } ?: editablePlan
+        val timePickerState = rememberTimePickerState(
+            initialHour = currentPlan.time.fixedHour ?: 9,
+            initialMinute = currentPlan.time.fixedMinute ?: 0
+        )
+
+        AlertDialog(
+            onDismissRequest = {
+                showTimePicker = false
+                editingAlternative = null
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (editingAlternative != null) {
+                        // Update alternative
+                        editableAlternatives = editableAlternatives.mapValues { (key, plan) ->
+                            if (key == editingAlternative) {
+                                plan.copy(
+                                    time = plan.time.copy(
+                                        fixedHour = timePickerState.hour,
+                                        fixedMinute = timePickerState.minute
+                                    )
+                                )
+                            } else {
+                                plan
+                            }
+                        }
+                    } else {
+                        // Update main plan
+                        editablePlan = editablePlan.copy(
+                            time = editablePlan.time.copy(
+                                fixedHour = timePickerState.hour,
+                                fixedMinute = timePickerState.minute
+                            )
+                        )
+                    }
+                    showTimePicker = false
+                    editingAlternative = null
+                }) {
+                    Text("확인")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showTimePicker = false
+                    editingAlternative = null
+                }) {
+                    Text("취소")
+                }
+            },
+            text = {
+                TimePicker(state = timePickerState)
+            },
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     }
 }
 
@@ -147,10 +334,14 @@ private fun ConfidenceWarning(
 
 /**
  * Card displaying the parsed plan details.
+ * For one-time events, shows clickable date/time fields.
  */
 @Composable
 private fun PlanDetailCard(
     plan: NormalizedPlan,
+    isEditable: Boolean = false,
+    onDateClick: () -> Unit = {},
+    onTimeClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -198,15 +389,85 @@ private fun PlanDetailCard(
 
             Divider()
 
+            // Date (for one-time events)
+            if (plan.specificDate != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (isEditable) Modifier.clickable(onClick = onDateClick)
+                            else Modifier
+                        )
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarToday,
+                        contentDescription = "Date",
+                        tint = if (isEditable) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = try {
+                            val date = LocalDate.parse(plan.specificDate, DateTimeFormatter.ISO_LOCAL_DATE)
+                            date.format(DateTimeFormatter.ofPattern("yyyy년 M월 d일 (E)", java.util.Locale.KOREAN))
+                        } catch (e: Exception) {
+                            plan.specificDate
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isEditable) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface
+                    )
+                    if (isEditable) {
+                        Text(
+                            text = "(탭하여 수정)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             // Time details
-            Text(
-                text = "Time: ${formatTimeDetails(plan)}",
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (isEditable && plan.time.anchor.uppercase() == "FIXED")
+                            Modifier.clickable(onClick = onTimeClick)
+                        else Modifier
+                    )
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Schedule,
+                    contentDescription = "Time",
+                    tint = if (isEditable && plan.time.anchor.uppercase() == "FIXED")
+                           MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "시간: ${formatTimeDetails(plan)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isEditable && plan.time.anchor.uppercase() == "FIXED")
+                            MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
+                )
+                if (isEditable && plan.time.anchor.uppercase() == "FIXED") {
+                    Text(
+                        text = "(탭하여 수정)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             // Recurrence details
             Text(
-                text = "Repeats: ${formatRecurrence(plan)}",
+                text = "반복: ${formatRecurrence(plan)}",
                 style = MaterialTheme.typography.bodyMedium
             )
 
@@ -224,15 +485,21 @@ private fun PlanDetailCard(
 }
 
 /**
- * Checkbox row for alternative task selection.
+ * Expandable card for alternative task selection and editing.
  */
 @Composable
-private fun AlternativeCheckbox(
+private fun AlternativeCard(
     alternative: AlternativePlan,
+    editablePlan: NormalizedPlan,
     isSelected: Boolean,
+    isEditable: Boolean,
     onToggle: () -> Unit,
+    onDateClick: () -> Unit,
+    onTimeClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var isExpanded by remember { mutableStateOf(false) }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -243,46 +510,145 @@ private fun AlternativeCheckbox(
             }
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Checkbox(
-                checked = isSelected,
-                onCheckedChange = { onToggle() }
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Emoji if available
-            if (!alternative.iconEmoji.isNullOrBlank()) {
-                Text(
-                    text = alternative.iconEmoji,
-                    style = MaterialTheme.typography.headlineSmall
+            // Header row with checkbox and title
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggle() }
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-            }
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = alternative.title,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+                // Emoji if available
+                if (!alternative.iconEmoji.isNullOrBlank()) {
                     Text(
-                        text = alternative.planType,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = alternative.iconEmoji,
+                        style = MaterialTheme.typography.headlineSmall
                     )
-                    if (alternative.routineType != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = alternative.title,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text(
-                            text = "• ${alternative.routineType}",
+                            text = alternative.planType,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (alternative.routineType != null) {
+                            Text(
+                                text = "• ${alternative.routineType}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Expand/collapse icon
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (isExpanded) "접기" else "펼치기"
+                )
+            }
+
+            // Expanded details
+            if (isExpanded) {
+                Divider(modifier = Modifier.padding(horizontal = 12.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Date (for one-time events)
+                    if (editablePlan.specificDate != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (isEditable) Modifier.clickable(onClick = onDateClick)
+                                    else Modifier
+                                )
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarToday,
+                                contentDescription = "Date",
+                                tint = if (isEditable) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = try {
+                                    val date = LocalDate.parse(editablePlan.specificDate, DateTimeFormatter.ISO_LOCAL_DATE)
+                                    date.format(DateTimeFormatter.ofPattern("yyyy년 M월 d일 (E)", java.util.Locale.KOREAN))
+                                } catch (e: Exception) {
+                                    editablePlan.specificDate
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isEditable) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface
+                            )
+                            if (isEditable) {
+                                Text(
+                                    text = "(탭하여 수정)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Time details
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (isEditable && editablePlan.time.anchor.uppercase() == "FIXED")
+                                    Modifier.clickable(onClick = onTimeClick)
+                                else Modifier
+                            )
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = "Time",
+                            tint = if (isEditable && editablePlan.time.anchor.uppercase() == "FIXED")
+                                   MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "시간: ${formatTimeDetails(editablePlan)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isEditable && editablePlan.time.anchor.uppercase() == "FIXED")
+                                    MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface
+                        )
+                        if (isEditable && editablePlan.time.anchor.uppercase() == "FIXED") {
+                            Text(
+                                text = "(탭하여 수정)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

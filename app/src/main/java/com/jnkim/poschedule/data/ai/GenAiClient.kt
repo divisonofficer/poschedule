@@ -1,5 +1,6 @@
 package com.jnkim.poschedule.data.ai
 
+import com.jnkim.poschedule.data.remote.api.GenAiFile
 import com.jnkim.poschedule.data.repo.GenAiRepository
 import com.jnkim.poschedule.data.repo.SettingsRepository
 import com.jnkim.poschedule.domain.ai.GentleCopyRequest
@@ -109,31 +110,55 @@ class GenAiClient @Inject constructor(
 
     /**
      * Calls the real Multi-modal pipeline to decompose a physical chore image.
+     * Deprecated: Use analyzeChoreImages for multi-image support.
      */
+    @Deprecated("Use analyzeChoreImages for better multi-image support")
     suspend fun analyzeChoreImage(imageFile: File, lang: String = "en"): List<MicroChore> {
-        android.util.Log.d("TidySnap", "Starting image analysis for file: ${imageFile.name}, lang: $lang")
+        return analyzeChoreImages(listOf(imageFile), lang)
+    }
 
-        // 1. Upload image to get server-side file metadata
-        val genAiFile = genAiRepository.uploadFile(imageFile)
-        if (genAiFile == null) {
-            android.util.Log.e("TidySnap", "Failed to upload image to server")
+    /**
+     * Analyzes multiple chore images from different angles.
+     * Supports up to 5 images for comprehensive analysis.
+     */
+    suspend fun analyzeChoreImages(imageFiles: List<File>, lang: String = "en"): List<MicroChore> {
+        android.util.Log.d("TidySnap", "Starting image analysis for ${imageFiles.size} files, lang: $lang")
+
+        // 1. Upload all images
+        val uploadedFiles = mutableListOf<GenAiFile>()
+        for (imageFile in imageFiles) {
+            val genAiFile = genAiRepository.uploadFile(imageFile)
+            if (genAiFile == null) {
+                android.util.Log.e("TidySnap", "Failed to upload image: ${imageFile.name}")
+                continue
+            }
+            android.util.Log.d("TidySnap", "Image uploaded: ${imageFile.name} -> ${genAiFile.url}")
+            uploadedFiles.add(genAiFile)
+        }
+
+        if (uploadedFiles.isEmpty()) {
+            android.util.Log.e("TidySnap", "Failed to upload any images")
             return emptyList()
         }
 
-        android.util.Log.d("TidySnap", "Image uploaded successfully: ${genAiFile.url}")
+        android.util.Log.d("TidySnap", "Successfully uploaded ${uploadedFiles.size} images")
 
         // 2. Prepare Multi-modal Prompt
         val systemPrompt = promptManager.getTidySnapSystemPrompt(lang)
-        val userPrompt = "I have uploaded an image of a chore. Please analyze the physical state and decompose it into 3 micro-tasks."
+        val userPrompt = if (uploadedFiles.size == 1) {
+            "I have uploaded an image of a chore. Please analyze the physical state and decompose it into 3 micro-tasks."
+        } else {
+            "I have uploaded ${uploadedFiles.size} images of a chore from different angles. Please analyze all images comprehensively and decompose it into 3-5 micro-tasks."
+        }
 
         // 3. Get LLM Decomposition using the 'files' array for multi-modal support
         val rawResponse = genAiRepository.getCompletion(
             prompt = userPrompt,
             systemPrompt = systemPrompt,
-            files = listOf(genAiFile)
+            files = uploadedFiles
         )
 
-        android.util.Log.d("TidySnap", "Raw API response: $rawResponse")
+        android.util.Log.d("TidySnap", "Raw API response: ${rawResponse?.take(200)}")
 
         if (rawResponse == null) {
             android.util.Log.e("TidySnap", "API returned null response")

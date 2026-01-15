@@ -97,7 +97,7 @@ class GenAiRepository @Inject constructor(
         var lastException: Exception? = null
         repeat(3) { attempt ->
             try {
-                val fullUrl = "$baseUrl/agent/api/a3/claude?site_name=${settings.siteName}"
+                val fullUrl = "$baseUrl/agent/api/a3/claude"
                 android.util.Log.d("GenAiRepository", "=== API REQUEST DEBUG (Attempt ${attempt + 1}/3) ===")
                 android.util.Log.d("GenAiRepository", "Full URL: $fullUrl")
                 android.util.Log.d("GenAiRepository", "Headers:")
@@ -113,7 +113,6 @@ class GenAiRepository @Inject constructor(
 
                 val response = api.getCompletion(
                     model = "a3/claude",  // Using Claude model
-                    siteName = settings.siteName,
                     apiKey = apiKey,
                     request = request
                 )
@@ -132,7 +131,6 @@ class GenAiRepository @Inject constructor(
                         try {
                             val response = api.getCompletion(
                                 model = "a3/claude",
-                                siteName = settings.siteName,
                                 apiKey = newApiKey,
                                 request = request
                             )
@@ -190,30 +188,34 @@ class GenAiRepository @Inject constructor(
         val body = MultipartBody.Part.createFormData("files", file.name, requestFile)
 
         return try {
+            android.util.Log.d("GenAiRepository", "Uploading file: ${file.name} (${file.length()} bytes)")
+
             val response = api.uploadFile(
                 siteName = settings.siteName,
                 bearerToken = "Bearer $accessToken",
                 file = body
             )
-            
-            // Fixed the access to 'files' array from FileUploadResponse
-            // Note: In some versions of the API it returns a single data object, in others a list.
-            // Based on your TS reference, it returns an object with a 'files' array.
-            // If the GenAiApi was defined with data: FileData, we use that. 
-            // If it was defined with files: List, we use that.
-            
-            // Re-checking GenAiApi.kt: It currently has data: FileData. 
-            // I will align the Repository to the actual GenAiApi.kt I wrote last.
-            
-            val fileId = response.data.id ?: "upload_${System.currentTimeMillis()}"
+
+            android.util.Log.d("GenAiRepository", "Upload response: files count = ${response.files.size}")
+
+            if (response.files.isEmpty()) {
+                android.util.Log.e("GenAiRepository", "Upload returned empty files array")
+                return null
+            }
+
+            val uploadedFile = response.files[0]
+            val fileId = uploadedFile.id
             val fileUrl = "$baseUrl/v2/athena/chats/m1/files/$fileId?site_name=${settings.siteName}"
-            
+
+            android.util.Log.d("GenAiRepository", "File uploaded successfully: id=$fileId, url=$fileUrl")
+
             GenAiFile(
                 id = fileId,
-                name = file.name,
+                name = uploadedFile.name,
                 url = fileUrl
             )
         } catch (e: Exception) {
+            android.util.Log.e("GenAiRepository", "File upload failed: ${e.message}", e)
             null
         }
     }

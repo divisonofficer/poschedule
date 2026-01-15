@@ -114,13 +114,15 @@ class PlanRepository @Inject constructor(
      * @param startHour Hour of day (0-23)
      * @param startMinute Minute of hour (0-59)
      * @param durationMinutes Duration in minutes
+     * @param iconEmoji Optional emoji icon for the event
      */
     suspend fun addOneTimeEvent(
         title: String,
         date: String,
         startHour: Int,
         startMinute: Int,
-        durationMinutes: Int
+        durationMinutes: Int,
+        iconEmoji: String? = null
     ) {
         // Build timestamps using local timezone
         val localDate = java.time.LocalDate.parse(date)
@@ -139,6 +141,7 @@ class PlanRepository @Inject constructor(
             date = date,
             title = title,
             type = null,
+            iconEmoji = iconEmoji, // LLM-generated emoji icon
             source = PlanItemSource.MANUAL,
             window = PlanItemWindow.MIDDAY, // Use MIDDAY as default for one-time events
             status = "PENDING",

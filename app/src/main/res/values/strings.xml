@@ -102,4 +102,11 @@
     <string name="action_edit_manually">Edit Manually</string>
     <string name="action_confirm_save">Save Plan</string>
     <string name="action_cancel">Cancel action</string>
+
+    <!-- Share Intent -->
+    <string name="share_to_poschedule">Add to Poschedule</string>
+    <string name="import_draft_title">Import from Share</string>
+    <string name="import_analyzing">Analyzing content...</string>
+    <string name="import_error_unknown">Could not understand shared content</string>
+    <string name="import_retry">Try Again</string>
 </resources>

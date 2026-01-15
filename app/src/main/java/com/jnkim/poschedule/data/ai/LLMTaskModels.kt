@@ -19,7 +19,7 @@ data class LLMTaskResponse(
 
 /**
  * Normalized plan structure from LLM.
- * Maps to PlanSeries domain model.
+ * Maps to PlanSeries domain model (recurring) or one-time event.
  */
 @Serializable
 data class NormalizedPlan(
@@ -30,6 +30,7 @@ data class NormalizedPlan(
     val importance: String = "MEDIUM",  // LOW, MEDIUM, HIGH
     val time: TimeSpec,
     val recurrence: RecurrenceSpec,
+    val specificDate: String? = null,  // yyyy-MM-dd (for one-time events, when recurrence.kind = "NONE")
     val note: String? = null
 )
 

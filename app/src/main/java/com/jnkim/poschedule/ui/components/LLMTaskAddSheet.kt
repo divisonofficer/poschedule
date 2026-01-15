@@ -22,56 +22,65 @@ fun LLMTaskAddSheet(
 ) {
     var inputText by remember { mutableStateOf("") }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.llm_task_input_title),
-            style = MaterialTheme.typography.titleMedium
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = inputText,
-            onValueChange = { inputText = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.llm_task_input_placeholder)) },
-            minLines = 3,
-            enabled = !isLoading
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
+    Box(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
         ) {
-            TextButton(
-                onClick = onDismiss,
+            Text(
+                text = stringResource(R.string.llm_task_input_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(stringResource(R.string.llm_task_input_placeholder)) },
+                minLines = 3,
                 enabled = !isLoading
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(stringResource(R.string.action_cancel))
+                TextButton(
+                    onClick = onDismiss,
+                    enabled = !isLoading
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Button(
+                    onClick = { onSubmit(inputText) },
+                    enabled = !isLoading && inputText.isNotBlank()
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(stringResource(R.string.action_analyze))
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = { onSubmit(inputText) },
-                enabled = !isLoading && inputText.isNotBlank()
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text(stringResource(R.string.action_analyze))
-                }
+            // Show witty loading indicator when processing
+            if (isLoading) {
+                Spacer(modifier = Modifier.height(32.dp))
+                WittyLoadingIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }

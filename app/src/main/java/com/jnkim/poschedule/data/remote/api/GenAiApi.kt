@@ -27,14 +27,13 @@ data class GenAiResponse(
 
 @Serializable
 data class FileUploadResponse(
-    val code: String,
-    val data: FileData
+    val files: List<FileUploadData>
 )
 
 @Serializable
-data class FileData(
-    val id: String? = null,
-    @SerialName("file_url") val fileUrl: String
+data class FileUploadData(
+    val id: String,
+    val name: String
 )
 
 @Serializable
@@ -64,7 +63,6 @@ interface GenAiApi {
     @POST("agent/api/{model}")
     suspend fun getCompletion(
         @Path("model") model: String = "a3/claude",
-        @Query("site_name") siteName: String,
         @Header("X-API-Key") apiKey: String,
         @Header("Origin") origin: String = "https://genai.postech.ac.kr",
         @Header("Referer") referer: String = "https://genai.postech.ac.kr/",

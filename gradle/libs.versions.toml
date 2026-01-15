@@ -24,6 +24,8 @@ serialization = "1.6.0"
 ksp = "2.0.21-1.0.25"
 camerax = "1.3.4"
 glance = "1.0.0"
+coil = "2.5.0"
+mlkit = "16.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -86,6 +88,12 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 
 # Glance (Compose-based widgets)
 androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
+
+# Coil (Image loading)
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+
+# MLKit (Text recognition)
+mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition-korean", version.ref = "mlkit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

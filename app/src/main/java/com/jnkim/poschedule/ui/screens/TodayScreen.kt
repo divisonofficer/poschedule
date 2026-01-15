@@ -1,5 +1,7 @@
 package com.jnkim.poschedule.ui.screens
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -131,7 +133,28 @@ fun TodayScreen(
     var zoomLevel by remember { mutableStateOf<CalendarZoom>(CalendarZoom.DAY) }
     var selectedItemForActions by remember { mutableStateOf<PlanItemEntity?>(null) }
 
+    var showClipboardPrompt by remember { mutableStateOf(false) }
+    var clipboardText by remember { mutableStateOf("") }
+    var clipboardChecked by remember { mutableStateOf(false) }
+
     val context = LocalContext.current
+
+    // Check clipboard on first composition
+    LaunchedEffect(Unit) {
+        if (!clipboardChecked) {
+            clipboardChecked = true
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            val clipData = clipboard?.primaryClip
+            if (clipData != null && clipData.itemCount > 0) {
+                val text = clipData.getItemAt(0).text?.toString()
+                if (!text.isNullOrBlank() && text.length > 10 && text.length < 1000) {
+                    // Only prompt for meaningful text (10-1000 chars)
+                    clipboardText = text
+                    showClipboardPrompt = true
+                }
+            }
+        }
+    }
 
     LaunchedEffect(selectedDate) {
         viewModel.onDateSelected(selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE))
@@ -202,6 +225,51 @@ fun TodayScreen(
         )
     }
 
+    // Clipboard Prompt Dialog
+    if (showClipboardPrompt) {
+        AlertDialog(
+            onDismissRequest = { showClipboardPrompt = false },
+            title = { Text("클립보드에서 만들까요?") },
+            text = {
+                Column {
+                    Text(
+                        text = "클립보드에 다음 내용이 있습니다:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    GlassCard(
+                        modifier = Modifier.heightIn(max = 150.dp)
+                    ) {
+                        Text(
+                            text = clipboardText.take(200) + if (clipboardText.length > 200) "..." else "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClipboardPrompt = false
+                        viewModel.normalizeTaskWithLLM(clipboardText)
+                        showLLMInput = true
+                    }
+                ) {
+                    Text("만들기")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClipboardPrompt = false }) {
+                    Text("취소")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        )
+    }
+
     // LLM Input Flow
     if (showLLMInput) {
         GlassBottomSheet(
@@ -237,13 +305,13 @@ fun TodayScreen(
                             normalizedPlan = plan,
                             confidence = response.confidence,
                             alternatives = response.alternatives,
-                            onConfirm = { selectedAlternatives ->
-                                // Save main plan
-                                viewModel.confirmLLMPlanAndSave(plan)
+                            onConfirm = { modifiedPlan, selectedAlternatives ->
+                                // Save main plan (with possible date/time modifications)
+                                viewModel.confirmLLMPlanAndSave(modifiedPlan)
 
-                                // Save selected alternatives
-                                selectedAlternatives.forEach { alt ->
-                                    viewModel.confirmAlternativePlan(alt, plan)
+                                // Save selected alternatives (now full NormalizedPlan with edited date/time)
+                                selectedAlternatives.forEach { altPlan ->
+                                    viewModel.confirmLLMPlanAndSave(altPlan)
                                 }
 
                                 showLLMInput = false

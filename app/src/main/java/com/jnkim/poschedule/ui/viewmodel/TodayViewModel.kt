@@ -353,19 +353,13 @@ class TodayViewModel @Inject constructor(
 
     /**
      * Confirms and saves the LLM-normalized plan to the database.
-     * Maps NormalizedPlan to existing entity structure and creates a plan series.
+     * Maps NormalizedPlan to existing entity structure.
+     * For one-time events (recurrence.kind = NONE), creates a single PlanItemEntity.
+     * For recurring events, creates a PlanSeriesEntity and expands it.
      */
     fun confirmLLMPlanAndSave(normalizedPlan: com.jnkim.poschedule.data.ai.NormalizedPlan) {
         viewModelScope.launch {
             try {
-                // Map to existing entity structure
-                val anchor = when (normalizedPlan.time.anchor.uppercase()) {
-                    "WAKE" -> TimeAnchor.WAKE
-                    "BED" -> TimeAnchor.BED
-                    "FIXED" -> TimeAnchor.FIXED
-                    else -> TimeAnchor.FIXED // Default to FIXED for FLEX
-                }
-
                 val planType = try {
                     PlanType.valueOf(normalizedPlan.planType.uppercase())
                 } catch (e: Exception) {
@@ -380,58 +374,87 @@ class TodayViewModel @Inject constructor(
                     }
                 }
 
-                val frequency = when (normalizedPlan.recurrence.kind.uppercase()) {
-                    "DAILY" -> RecurrenceFrequency.DAILY
-                    "WEEKLY" -> RecurrenceFrequency.WEEKLY
-                    "WEEKDAYS" -> RecurrenceFrequency.WEEKLY
-                    "MONTHLY" -> RecurrenceFrequency.MONTHLY
-                    else -> RecurrenceFrequency.DAILY // Default for NONE
-                }
+                // Check if this is a one-time event
+                if (normalizedPlan.recurrence.kind.uppercase() == "NONE" && normalizedPlan.specificDate != null) {
+                    // One-time event: create a single PlanItemEntity directly
+                    val hour = normalizedPlan.time.fixedHour ?: 9
+                    val minute = normalizedPlan.time.fixedMinute ?: 0
+                    val durationMinutes = normalizedPlan.time.duration
 
-                // Convert weekdays list to byDays string (comma-separated)
-                val byDays = when {
-                    normalizedPlan.recurrence.kind.uppercase() == "WEEKDAYS" -> "1,2,3,4,5" // Mon-Fri
-                    normalizedPlan.recurrence.weekdays != null ->
-                        normalizedPlan.recurrence.weekdays.joinToString(",")
-                    else -> null
-                }
+                    planRepository.addOneTimeEvent(
+                        title = normalizedPlan.title,
+                        date = normalizedPlan.specificDate,
+                        startHour = hour,
+                        startMinute = minute,
+                        durationMinutes = durationMinutes,
+                        iconEmoji = normalizedPlan.iconEmoji // Pass LLM-generated emoji
+                    )
 
-                // Calculate offsets based on anchor type
-                val startOffset = when (anchor) {
-                    TimeAnchor.FIXED -> {
-                        // For FIXED anchor, we'll store hour/minute as offsets from midnight
-                        val hour = normalizedPlan.time.fixedHour ?: 9
-                        val minute = normalizedPlan.time.fixedMinute ?: 0
-                        hour * 60 + minute
+                    android.util.Log.d("TodayViewModel", "Created one-time event: ${normalizedPlan.title} on ${normalizedPlan.specificDate} at $hour:$minute with emoji ${normalizedPlan.iconEmoji}")
+                } else {
+                    // Recurring event: create a series
+                    val anchor = when (normalizedPlan.time.anchor.uppercase()) {
+                        "WAKE" -> TimeAnchor.WAKE
+                        "BED" -> TimeAnchor.BED
+                        "FIXED" -> TimeAnchor.FIXED
+                        else -> TimeAnchor.FIXED // Default to FIXED for FLEX
                     }
-                    else -> normalizedPlan.time.offset ?: 0
+
+                    val frequency = when (normalizedPlan.recurrence.kind.uppercase()) {
+                        "DAILY" -> RecurrenceFrequency.DAILY
+                        "WEEKLY" -> RecurrenceFrequency.WEEKLY
+                        "WEEKDAYS" -> RecurrenceFrequency.WEEKLY
+                        "MONTHLY" -> RecurrenceFrequency.MONTHLY
+                        else -> RecurrenceFrequency.DAILY // Default
+                    }
+
+                    // Convert weekdays list to byDays string (comma-separated)
+                    val byDays = when {
+                        normalizedPlan.recurrence.kind.uppercase() == "WEEKDAYS" -> "1,2,3,4,5" // Mon-Fri
+                        normalizedPlan.recurrence.weekdays != null ->
+                            normalizedPlan.recurrence.weekdays.joinToString(",")
+                        else -> null
+                    }
+
+                    // Calculate offsets based on anchor type
+                    val startOffset = when (anchor) {
+                        TimeAnchor.FIXED -> {
+                            // For FIXED anchor, we'll store hour/minute as offsets from midnight
+                            val hour = normalizedPlan.time.fixedHour ?: 9
+                            val minute = normalizedPlan.time.fixedMinute ?: 0
+                            hour * 60 + minute
+                        }
+                        else -> normalizedPlan.time.offset ?: 0
+                    }
+
+                    val endOffset = startOffset + normalizedPlan.time.duration
+
+                    // Create plan series entity
+                    val series = PlanSeriesEntity(
+                        id = UUID.randomUUID().toString(),
+                        title = normalizedPlan.title,
+                        type = planType,
+                        routineType = routineType,
+                        iconEmoji = normalizedPlan.iconEmoji, // LLM-generated emoji icon
+                        isCore = false, // LLM-created plans default to non-core
+                        anchor = anchor,
+                        startOffsetMin = startOffset,
+                        endOffsetMin = endOffset,
+                        frequency = frequency,
+                        interval = 1,
+                        byDays = byDays,
+                        isActive = true,
+                        archived = false
+                    )
+
+                    // Add series to database
+                    planRepository.addSeries(series)
+
+                    // Expand for current week
+                    expandSeriesForCurrentWeek(series)
+
+                    android.util.Log.d("TodayViewModel", "Created recurring plan series: ${normalizedPlan.title} (${normalizedPlan.recurrence.kind})")
                 }
-
-                val endOffset = startOffset + normalizedPlan.time.duration
-
-                // Create plan series entity
-                val series = PlanSeriesEntity(
-                    id = UUID.randomUUID().toString(),
-                    title = normalizedPlan.title,
-                    type = planType,
-                    routineType = routineType,
-                    iconEmoji = normalizedPlan.iconEmoji, // LLM-generated emoji icon
-                    isCore = false, // LLM-created plans default to non-core
-                    anchor = anchor,
-                    startOffsetMin = startOffset,
-                    endOffsetMin = endOffset,
-                    frequency = frequency,
-                    interval = 1,
-                    byDays = byDays,
-                    isActive = true,
-                    archived = false
-                )
-
-                // Add series to database
-                planRepository.addSeries(series)
-
-                // Expand for current week
-                expandSeriesForCurrentWeek(series)
 
                 // Reset state
                 _llmNormalizerState.value = LLMNormalizerState.Idle
@@ -439,6 +462,7 @@ class TodayViewModel @Inject constructor(
                 // Refresh UI
                 refreshSystemMessage()
             } catch (e: Exception) {
+                android.util.Log.e("TodayViewModel", "Failed to save plan: ${e.message}", e)
                 _llmNormalizerState.value = LLMNormalizerState.Error(
                     "Failed to save plan: ${e.message}"
                 )

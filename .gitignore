@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+*PLAN*.md
+*.log
+*SUMMARY*.md
