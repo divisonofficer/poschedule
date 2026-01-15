@@ -139,6 +139,13 @@ fun SettingsScreen(
 
                 // API Provider Section
                 Text(stringResource(R.string.section_api_provider), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                // Experimental disclaimer (UI refinement Phase 4)
+                Text(
+                    text = stringResource(R.string.desc_api_experimental),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
                 GlassCard(modifier = Modifier.fillMaxWidth()) {
                     settings?.let { s ->
                         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -155,7 +162,8 @@ fun SettingsScreen(
                                 onSelectionChange = { index ->
                                     viewModel.updateApiProvider(if (index == 0) "POSTECH" else "GEMINI")
                                 },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                style = SegmentedControlStyle.SOLID  // UI refinement Phase 4: important setting
                             )
 
                             // POSTECH Model Selection (only show if POSTECH selected)
@@ -186,7 +194,8 @@ fun SettingsScreen(
                                         }
                                         viewModel.updatePostechModel(model)
                                     },
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth(),
+                                    style = SegmentedControlStyle.SOLID  // UI refinement Phase 4: important setting
                                 )
                             }
 
@@ -219,7 +228,8 @@ fun SettingsScreen(
                                         }
                                         viewModel.updateGeminiModel(model)
                                     },
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth(),
+                                    style = SegmentedControlStyle.SOLID  // UI refinement Phase 4: important setting
                                 )
 
                                 Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))

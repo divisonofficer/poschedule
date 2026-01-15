@@ -45,6 +45,7 @@
 
     <!-- API Provider Settings -->
     <string name="section_api_provider">AI Provider</string>
+    <string name="desc_api_experimental">This feature is experimental and results may vary.</string>
     <string name="label_api_provider">AI Service</string>
     <string name="desc_api_provider">Choose which AI service powers your assistant</string>
     <string name="provider_postech">POSTECH GenAI</string>
@@ -179,6 +180,7 @@
     <!-- Share Intent -->
     <string name="share_to_poschedule">Add to Poschedule</string>
     <string name="import_draft_title">Import from Share</string>
+    <string name="import_draft_selected_count">Selected %1$d as schedule candidates</string>
     <string name="import_analyzing">Analyzing content...</string>
     <string name="import_error_unknown">Could not understand shared content</string>
     <string name="import_retry">Try Again</string>

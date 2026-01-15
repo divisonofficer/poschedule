@@ -89,6 +89,16 @@ enum class CalendarZoom {
 }
 
 /**
+ * Priority level for timeline cards based on time proximity.
+ * Used to apply visual hierarchy (5-8% color differences).
+ */
+enum class PriorityLevel {
+    NOW,      // Within ±30min of current time - darker bg, subtle glow, accent boost
+    TODAY,    // Current date, outside ±30min window - baseline style
+    RELAXED   // Future dates or low priority - lighter, desaturated
+}
+
+/**
  * Returns an icon representing the current day phase.
  */
 private fun getDayPhaseIcon(phase: DayPhase): androidx.compose.ui.graphics.vector.ImageVector {
@@ -1286,6 +1296,21 @@ fun PlanItemOrbCard(
     val skipped = item.status == "SKIPPED"
     val snoozed = item.status == "SNOOZED"
 
+    // Calculate priority level based on time proximity (UI refinement Phase 2)
+    val currentTimeMillis = System.currentTimeMillis()
+    val nowWindowMillis = DesignTokens.Priority.nowWindowMinutes * 60 * 1000L
+    val priority = when {
+        // Don't apply priority styling to completed/skipped items
+        completed || skipped -> PriorityLevel.TODAY
+        // Level 1: NOW - within ±30min of current time
+        item.startTimeMillis != null &&
+        abs(currentTimeMillis - item.startTimeMillis) <= nowWindowMillis -> PriorityLevel.NOW
+        // Level 2: TODAY - current date, outside ±30min window (default)
+        else -> PriorityLevel.TODAY
+        // Note: RELAXED level not used for items on current date, only for future dates
+        // which would be in a different day's view
+    }
+
     // Check if item is overdue (past end time but not done)
     val isOverdue = !completed && !skipped && item.endTimeMillis != null &&
                     System.currentTimeMillis() > item.endTimeMillis
@@ -1315,9 +1340,10 @@ fun PlanItemOrbCard(
         }
     }
 
-    // Apply very subtle orange tint for overdue items
-    val cardModifier = if (isOverdue) {
-        Modifier
+    // Apply priority-based visual treatment (UI refinement Phase 2)
+    val cardModifier = when {
+        // Overdue takes precedence (keeps existing behavior)
+        isOverdue -> Modifier
             .fillMaxWidth()
             .scale(scale)
             .alpha(alpha)
@@ -1325,8 +1351,17 @@ fun PlanItemOrbCard(
                 color = Color(0xFFFF9800).copy(alpha = 0.03f),
                 shape = RoundedCornerShape(24.dp)
             )
-    } else {
-        Modifier
+        // NOW priority: slightly darker background + subtle glow
+        priority == PriorityLevel.NOW && !completed && !skipped -> Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .alpha(alpha)
+            .focusGlow(
+                glowRadius = DesignTokens.Glow.focusRadius,
+                intensity = DesignTokens.Glow.focusIntensity
+            )
+        // TODAY and others: baseline style
+        else -> Modifier
             .fillMaxWidth()
             .scale(scale)
             .alpha(alpha)
@@ -1392,7 +1427,9 @@ fun PlanItemOrbCard(
                         )
                     }
                 }
-                snoozed -> {
+                // Smart +15min badge: only show when relevant (UI refinement Phase 2)
+                // Show if: item is snoozed OR within ±30min of current time
+                snoozed || (!completed && !skipped && priority == PriorityLevel.NOW) -> {
                     Surface(
                         color = Color(0xFF2196F3).copy(alpha = 0.2f),
                         shape = CircleShape
@@ -1422,7 +1459,26 @@ fun PlanItemOrbCard(
 
 @Composable
 fun SystemStateBubble(mode: Mode, title: String, body: String) {
-    GlassCard(modifier = Modifier.fillMaxWidth()) {
+    val isRecoveryMode = mode == Mode.RECOVERY
+
+    // Add gradient background for recovery mode (UI refinement Phase 3)
+    val backgroundModifier = if (isRecoveryMode) {
+        Modifier
+            .fillMaxWidth()
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(
+                        ModeRecovery.copy(alpha = DesignTokens.Status.recoveryGradientAlpha),
+                        Color.Transparent
+                    )
+                ),
+                shape = RoundedCornerShape(DesignTokens.Layer.surfaceRadius)
+            )
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    GlassCard(modifier = backgroundModifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val emoji = when (mode) {
                 Mode.NORMAL -> "🌿"
@@ -1430,7 +1486,21 @@ fun SystemStateBubble(mode: Mode, title: String, body: String) {
                 Mode.LOW_MOOD -> "🍑"
                 Mode.BUSY -> "🐝"
             }
-            Text(text = emoji, style = MaterialTheme.typography.headlineSmall)
+
+            // Add inner glow to emoji in recovery mode (UI refinement Phase 3)
+            Box(
+                modifier = if (isRecoveryMode) {
+                    Modifier.innerGlow(
+                        glowRadius = DesignTokens.Status.recoveryIconGlowRadius,
+                        intensity = DesignTokens.Status.recoveryIconGlowIntensity
+                    )
+                } else {
+                    Modifier
+                }
+            ) {
+                Text(text = emoji, style = MaterialTheme.typography.headlineSmall)
+            }
+
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(text = title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)

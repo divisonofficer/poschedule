@@ -173,6 +173,35 @@ object DesignTokens {
         val focusIntensity = 0.25f     // Focus ring glow alpha
         val selectedIntensity = 0.2f   // Selected item glow alpha
     }
+
+    // === PRIORITY LEVELS ===
+    // Visual hierarchy for timeline cards (5-8% color differences)
+    object Priority {
+        // Background alpha per priority level
+        val nowBackgroundAlpha = 0.98f      // +3% vs baseline (urgent items)
+        val todayBackgroundAlpha = 0.95f    // Baseline (standard items)
+        val relaxedBackgroundAlpha = 0.92f  // -3% vs baseline (future items)
+
+        // Text alpha per priority level
+        val nowTextAlpha = 1.0f       // Full opacity for urgent
+        val todayTextAlpha = 1.0f     // Full opacity for today
+        val relaxedTextAlpha = 0.5f   // Reduced opacity for relaxed
+
+        // Accent color modulation
+        val accentBoost = 0.08f        // +8% alpha for NOW level accents
+        val accentDesaturate = 0.15f   // -15% saturation for RELAXED level
+
+        // Time window for "NOW" priority (±30 minutes)
+        const val nowWindowMinutes = 30
+    }
+
+    // === STATUS CARD EFFECTS ===
+    // Recovery mode card enhancements for OS-like feel
+    object Status {
+        val recoveryGradientAlpha = 0.08f    // Subtle vertical gradient intensity
+        val recoveryIconGlowRadius = 4.dp     // Glow radius for mode icon
+        val recoveryIconGlowIntensity = 0.15f // Glow alpha for mode icon
+    }
 }
 
 /**

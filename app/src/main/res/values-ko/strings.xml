@@ -45,6 +45,7 @@
 
     <!-- API Provider Settings (Korean) -->
     <string name="section_api_provider">AI 제공자</string>
+    <string name="desc_api_experimental">이 기능은 실험 중이며, 결과가 달라질 수 있어요.</string>
     <string name="label_api_provider">AI 서비스</string>
     <string name="desc_api_provider">어시스턴트를 구동할 AI 서비스를 선택하세요</string>
     <string name="provider_postech">포스텍 GenAI</string>
@@ -179,6 +180,7 @@
     <!-- Share Intent -->
     <string name="share_to_poschedule">포스케줄에 추가</string>
     <string name="import_draft_title">공유에서 가져오기</string>
+    <string name="import_draft_selected_count">%1$d개를 일정 후보로 골랐어요</string>
     <string name="import_analyzing">내용 분석 중...</string>
     <string name="import_error_unknown">공유된 내용을 이해할 수 없습니다</string>
     <string name="import_retry">다시 시도</string>

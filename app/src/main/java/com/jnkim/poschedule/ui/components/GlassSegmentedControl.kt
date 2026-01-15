@@ -24,6 +24,17 @@ import com.jnkim.poschedule.ui.theme.DesignTokens
 import com.jnkim.poschedule.ui.theme.isReducedMotionEnabled
 
 /**
+ * Visual style for segmented control.
+ *
+ * - GLASS: Pill-shaped (999dp radius), subtle glass aesthetic
+ * - SOLID: More solid feel (12dp radius), higher contrast for important settings
+ */
+enum class SegmentedControlStyle {
+    GLASS,   // Current default style - pill radius, lower contrast
+    SOLID    // Solid style for important settings - sharper corners, higher contrast
+}
+
+/**
  * Glass pill segmented control for mutually exclusive options.
  *
  * Design Features:
@@ -47,7 +58,8 @@ fun GlassSegmentedControl(
     options: List<String>,
     selectedIndex: Int,
     onSelectionChange: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    style: SegmentedControlStyle = SegmentedControlStyle.GLASS
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
@@ -55,9 +67,15 @@ fun GlassSegmentedControl(
     // Container background (glass surface)
     val containerColor = colorScheme.surfaceVariant.copy(alpha = DesignTokens.Alpha.glassSubtle)
 
+    // Choose radius based on style
+    val containerRadius = when (style) {
+        SegmentedControlStyle.GLASS -> DesignTokens.Radius.pill
+        SegmentedControlStyle.SOLID -> DesignTokens.Radius.sm  // 12.dp
+    }
+
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(DesignTokens.Radius.pill))
+            .clip(RoundedCornerShape(containerRadius))
             .background(containerColor)
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -72,7 +90,8 @@ fun GlassSegmentedControl(
                         onSelectionChange(index)
                     }
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                style = style
             )
         }
     }
@@ -83,7 +102,8 @@ private fun SegmentedControlOption(
     text: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    style: SegmentedControlStyle = SegmentedControlStyle.GLASS
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val isReducedMotion = isReducedMotionEnabled()
@@ -95,9 +115,14 @@ private fun SegmentedControlOption(
         label = "segmentScale"
     )
 
-    // Background color (Layer 3 focused surface for selected)
+    // Background color - SOLID style uses slightly lower alpha for better contrast
+    val selectedAlpha = when (style) {
+        SegmentedControlStyle.GLASS -> 0.2f
+        SegmentedControlStyle.SOLID -> 0.15f  // Lower alpha, more solid feel
+    }
+
     val backgroundColor = if (isSelected) {
-        colorScheme.primary.copy(alpha = 0.2f)
+        colorScheme.primary.copy(alpha = selectedAlpha)
     } else {
         Color.Transparent
     }
@@ -109,10 +134,16 @@ private fun SegmentedControlOption(
         colorScheme.onSurface.copy(alpha = DesignTokens.Alpha.muted)
     }
 
+    // Choose radius based on style
+    val optionRadius = when (style) {
+        SegmentedControlStyle.GLASS -> DesignTokens.Radius.pill
+        SegmentedControlStyle.SOLID -> DesignTokens.Radius.sm  // 12.dp
+    }
+
     Box(
         modifier = modifier
             .scale(scale)
-            .clip(RoundedCornerShape(DesignTokens.Radius.pill))
+            .clip(RoundedCornerShape(optionRadius))
             .background(backgroundColor)
             .clickable(onClick = onClick)
             .padding(vertical = 8.dp, horizontal = 12.dp),

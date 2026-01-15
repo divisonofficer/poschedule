@@ -80,7 +80,7 @@ fun ImportDraftScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
+                    containerColor = ModeNormal.copy(alpha = 0.08f)  // UI refinement Phase 5: match main app tone
                 )
             )
 
@@ -280,7 +280,7 @@ private fun OCRResultContent(
                 style = MaterialTheme.typography.titleLarge
             )
             Text(
-                text = "$selectedCount/${textBlocks.size} 선택됨",
+                text = stringResource(R.string.import_draft_selected_count, selectedCount),  // UI refinement Phase 5: humanized text
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary
             )
