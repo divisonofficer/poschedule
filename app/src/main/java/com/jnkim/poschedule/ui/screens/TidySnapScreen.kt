@@ -3,11 +3,13 @@ package com.jnkim.poschedule.ui.screens
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.util.Log
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.ZoomState
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
@@ -55,11 +57,19 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Executor
 
-// Lens types for camera selection
-enum class LensType {
-    ULTRA_WIDE,  // 광각 - 책상 전체 캡처
-    WIDE,        // 표준 - 일반 촬영
-    TELEPHOTO    // 망원 - 멀리서 확대
+/**
+ * Semantic zoom profiles for multi-camera control.
+ * Uses zoom ratios instead of physical lens detection to support
+ * both Samsung (multiple CameraInfos) and Xiaomi (logical camera) devices.
+ */
+enum class ZoomProfile(
+    val targetZoomRatio: Float,
+    val labelKr: String,
+    val labelEn: String
+) {
+    ULTRA_WIDE(0.6f, "광각", "Ultra-Wide"),  // Wide field of view
+    STANDARD(1.0f, "표준", "Standard"),        // Default 1x zoom
+    TELEPHOTO(2.0f, "망원", "Telephoto")      // 2x zoom for distant objects
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,9 +83,14 @@ fun TidySnapScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    var currentLensType by remember { mutableStateOf(LensType.WIDE) }
-    var availableLenses by remember { mutableStateOf(setOf(LensType.WIDE)) }
-    val imageCapture = remember { ImageCapture.Builder().build() }
+    var currentZoomProfile by remember { mutableStateOf(ZoomProfile.STANDARD) }
+    var availableZoomProfiles by remember { mutableStateOf(setOf(ZoomProfile.STANDARD)) }
+    var boundCamera by remember { mutableStateOf<Camera?>(null) }
+    val imageCapture = remember {
+        ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY) // Use maximum resolution
+            .build()
+    }
     val cameraExecutor = remember { ContextCompat.getMainExecutor(context) }
 
     GlassBackground(accentColor = ModeNormal) {
@@ -86,85 +101,53 @@ fun TidySnapScreen(
                     factory = { ctx ->
                         val previewView = PreviewView(ctx)
                         val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+
                         cameraProviderFuture.addListener({
                             val cameraProvider = cameraProviderFuture.get()
 
-                            // Debug: Log all available cameras
-                            Log.d("TidySnap", "=== Available Cameras ===")
-                            cameraProvider.availableCameraInfos.forEachIndexed { index, cameraInfo ->
-                                val zoomState = cameraInfo.zoomState.value
-                                val facing = if (cameraInfo.lensFacing == CameraSelector.LENS_FACING_BACK) "BACK" else "FRONT"
-                                Log.d("TidySnap", "Camera $index: facing=$facing, minZoom=${zoomState?.minZoomRatio}, maxZoom=${zoomState?.maxZoomRatio}")
-                            }
+                            // Single camera selector - no filtering needed
+                            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
-                            // Detect available lenses
-                            val availableSet = mutableSetOf<LensType>()
-                            availableSet.add(LensType.WIDE) // Always available
-
-                            // Check for ultra-wide
-                            val ultraWideCameras = cameraProvider.availableCameraInfos.filter { cameraInfo ->
-                                cameraInfo.lensFacing == CameraSelector.LENS_FACING_BACK &&
-                                hasUltraWideCapability(cameraInfo)
-                            }
-                            Log.d("TidySnap", "Ultra-wide cameras found: ${ultraWideCameras.size}")
-                            if (ultraWideCameras.isNotEmpty()) {
-                                availableSet.add(LensType.ULTRA_WIDE)
-                            }
-
-                            // Check for telephoto
-                            val telephotoCameras = cameraProvider.availableCameraInfos.filter { cameraInfo ->
-                                cameraInfo.lensFacing == CameraSelector.LENS_FACING_BACK &&
-                                hasTelephotoCapability(cameraInfo)
-                            }
-                            Log.d("TidySnap", "Telephoto cameras found: ${telephotoCameras.size}")
-                            if (telephotoCameras.isNotEmpty()) {
-                                availableSet.add(LensType.TELEPHOTO)
-                            }
-
-                            availableLenses = availableSet
-                            Log.d("TidySnap", "Available lens types: $availableSet")
-
+                            // Build preview use case
                             val preview = Preview.Builder().build().also {
                                 it.setSurfaceProvider(previewView.surfaceProvider)
                             }
 
                             try {
+                                // Unbind previous camera
                                 cameraProvider.unbindAll()
-                                val cameraSelector = getCameraSelectorForLens(currentLensType)
-                                cameraProvider.bindToLifecycle(
+
+                                // Bind to single logical camera (works on all vendors)
+                                val camera = cameraProvider.bindToLifecycle(
                                     lifecycleOwner,
                                     cameraSelector,
                                     preview,
                                     imageCapture
                                 )
+
+                                // Store camera instance for zoom control
+                                boundCamera = camera
+
+                                // Detect zoom capabilities
+                                val initialZoomState = camera.cameraInfo.zoomState.value
+                                val detected = detectAvailableZoomProfiles(initialZoomState)
+                                availableZoomProfiles = detected
+
+                                Log.d("TidySnap", "Camera bound. Available profiles: $detected")
+
+                                // Set initial zoom ratio
+                                setZoomRatioSafely(camera, currentZoomProfile.targetZoomRatio)
+
                             } catch (e: Exception) {
-                                Log.e("TidySnap", "Use case binding failed", e)
+                                Log.e("TidySnap", "Camera binding failed", e)
                             }
                         }, ContextCompat.getMainExecutor(ctx))
+
                         previewView
                     },
                     update = { previewView ->
-                        // Rebind camera when lens type changes
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-                        cameraProviderFuture.addListener({
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
-
-                            try {
-                                cameraProvider.unbindAll()
-                                val cameraSelector = getCameraSelectorForLens(currentLensType)
-                                cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    cameraSelector,
-                                    preview,
-                                    imageCapture
-                                )
-                            } catch (e: Exception) {
-                                Log.e("TidySnap", "Use case binding failed", e)
-                            }
-                        }, ContextCompat.getMainExecutor(context))
+                        // No rebinding needed - zoom changes handled via setZoomRatio
+                        // This lambda is called on recomposition but we don't rebind camera
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -183,45 +166,7 @@ fun TidySnapScreen(
                             Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.action_back))
                         }
                     },
-                    actions = {
-                        // Lens switcher (only show during Capturing)
-                        if (uiState is TidySnapUiState.Capturing && availableLenses.size > 1) {
-                            IconButton(
-                                onClick = {
-                                    // Cycle through available lenses
-                                    currentLensType = when (currentLensType) {
-                                        LensType.WIDE -> {
-                                            if (LensType.ULTRA_WIDE in availableLenses) LensType.ULTRA_WIDE
-                                            else if (LensType.TELEPHOTO in availableLenses) LensType.TELEPHOTO
-                                            else LensType.WIDE
-                                        }
-                                        LensType.ULTRA_WIDE -> {
-                                            if (LensType.TELEPHOTO in availableLenses) LensType.TELEPHOTO
-                                            else LensType.WIDE
-                                        }
-                                        LensType.TELEPHOTO -> LensType.WIDE
-                                    }
-                                }
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        Icons.Default.CameraAlt,
-                                        contentDescription = "Switch lens",
-                                        tint = Color.White
-                                    )
-                                    Text(
-                                        text = when (currentLensType) {
-                                            LensType.ULTRA_WIDE -> "광각"
-                                            LensType.WIDE -> "표준"
-                                            LensType.TELEPHOTO -> "망원"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White
-                                    )
-                                }
-                            }
-                        }
-                    },
+                    actions = { },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                 )
 
@@ -249,6 +194,47 @@ fun TidySnapScreen(
                                         onRemove = { viewModel.removeCapturedImage(imageFile) }
                                     )
                                 }
+                            }
+                        }
+
+                        // Zoom Profile Selector (show all available profiles)
+                        if (availableZoomProfiles.size > 1) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                availableZoomProfiles.toList()
+                                    .sortedBy { it.targetZoomRatio }
+                                    .forEach { profile ->
+                                        FilterChip(
+                                            selected = currentZoomProfile == profile,
+                                            onClick = {
+                                                currentZoomProfile = profile
+                                                setZoomRatioSafely(boundCamera, profile.targetZoomRatio)
+                                                Log.d("TidySnap", "Switched to $profile (${profile.targetZoomRatio}x)")
+                                            },
+                                            label = {
+                                                Text(
+                                                    text = "${profile.labelKr} ${profile.targetZoomRatio}x",
+                                                    style = MaterialTheme.typography.labelMedium
+                                                )
+                                            },
+                                            modifier = Modifier.padding(horizontal = 4.dp),
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                containerColor = Color.Black.copy(alpha = 0.3f),
+                                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                                labelColor = Color.White,
+                                                selectedLabelColor = Color.White
+                                            ),
+                                            border = FilterChipDefaults.filterChipBorder(
+                                                enabled = true,
+                                                selected = currentZoomProfile == profile,
+                                                borderColor = Color.White.copy(alpha = 0.3f),
+                                                selectedBorderColor = MaterialTheme.colorScheme.primary
+                                            )
+                                        )
+                                    }
                             }
                         }
 
@@ -399,72 +385,74 @@ fun ImageThumbnail(
 }
 
 /**
- * Get CameraSelector for the specified lens type.
+ * Detect available zoom profiles based on camera's zoom range.
+ * Works on all vendors (Xiaomi, Samsung, Pixel) via unified ZoomState API.
+ *
+ * @param zoomState Camera zoom capabilities
+ * @return Set of supported zoom profiles
  */
-private fun getCameraSelectorForLens(lensType: LensType): CameraSelector {
-    return when (lensType) {
-        LensType.ULTRA_WIDE -> {
-            CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                .addCameraFilter { cameraInfos ->
-                    cameraInfos.filter { hasUltraWideCapability(it) }
-                }
-                .build()
-        }
-        LensType.TELEPHOTO -> {
-            CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                .addCameraFilter { cameraInfos ->
-                    cameraInfos.filter { hasTelephotoCapability(it) }
-                }
-                .build()
-        }
-        LensType.WIDE -> CameraSelector.DEFAULT_BACK_CAMERA
+private fun detectAvailableZoomProfiles(zoomState: ZoomState?): Set<ZoomProfile> {
+    if (zoomState == null) {
+        Log.w("TidySnap", "ZoomState is null, only STANDARD available")
+        return setOf(ZoomProfile.STANDARD)
     }
+
+    val minZoom = zoomState.minZoomRatio
+    val maxZoom = zoomState.maxZoomRatio
+
+    Log.d("TidySnap", "Camera zoom range: $minZoom - $maxZoom")
+
+    val profiles = mutableSetOf<ZoomProfile>()
+
+    // Standard 1.0x is always available
+    profiles.add(ZoomProfile.STANDARD)
+
+    // Ultra-wide: Check if camera supports 0.6x zoom (with 0.05 tolerance)
+    if (minZoom <= 0.65f) {
+        profiles.add(ZoomProfile.ULTRA_WIDE)
+        Log.d("TidySnap", "Ultra-wide available (minZoom=$minZoom)")
+    }
+
+    // Telephoto: Check if camera supports 2.0x zoom (with 0.1 tolerance)
+    if (maxZoom >= 1.9f) {
+        profiles.add(ZoomProfile.TELEPHOTO)
+        Log.d("TidySnap", "Telephoto available (maxZoom=$maxZoom)")
+    }
+
+    return profiles
 }
 
 /**
- * Check if camera has ultra-wide capability.
- * For Xiaomi devices, check physical camera IDs or logical multi-camera setup.
+ * Safely set zoom ratio with bounds checking and error handling.
+ * Replaces expensive camera rebinding with lightweight zoom control.
+ *
+ * @param camera Bound camera instance
+ * @param targetZoomRatio Desired zoom ratio (0.6, 1.0, 2.0, etc.)
  */
-private fun hasUltraWideCapability(cameraInfo: CameraInfo): Boolean {
-    return try {
-        // Method 1: Check zoom ratio (works on some devices)
-        val zoomState = cameraInfo.zoomState.value
-        val hasLowZoomRatio = zoomState?.minZoomRatio ?: 1f < 0.7f
-
-        // Method 2: Check if this is a logical camera with physical sub-cameras
-        // Ultra-wide cameras usually have camera ID 2 on Xiaomi devices
-        val cameraId = (cameraInfo as? androidx.camera.camera2.interop.Camera2CameraInfo)
-            ?.getCameraCharacteristic(android.hardware.camera2.CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
-            ?.firstOrNull()
-
-        Log.d("TidySnap", "Camera info - minZoomRatio: ${zoomState?.minZoomRatio}, focalLength: $cameraId")
-
-        hasLowZoomRatio
-    } catch (e: Exception) {
-        Log.e("TidySnap", "Error checking ultra-wide: ${e.message}")
-        false
+private fun setZoomRatioSafely(camera: Camera?, targetZoomRatio: Float) {
+    if (camera == null) {
+        Log.e("TidySnap", "Cannot set zoom: camera not bound")
+        return
     }
-}
 
-/**
- * Check if camera has telephoto capability.
- * For Xiaomi devices, telephoto is usually camera ID 3 or 4.
- */
-private fun hasTelephotoCapability(cameraInfo: CameraInfo): Boolean {
-    return try {
-        // Method 1: Check zoom ratio
-        val zoomState = cameraInfo.zoomState.value
-        val hasHighZoomRatio = zoomState?.minZoomRatio ?: 1f > 1.3f
-
-        Log.d("TidySnap", "Camera info - minZoomRatio: ${zoomState?.minZoomRatio}")
-
-        hasHighZoomRatio
-    } catch (e: Exception) {
-        Log.e("TidySnap", "Error checking telephoto: ${e.message}")
-        false
+    val zoomState = camera.cameraInfo.zoomState.value
+    if (zoomState == null) {
+        Log.e("TidySnap", "Cannot set zoom: zoomState unavailable")
+        return
     }
+
+    // Clamp zoom ratio to valid range
+    val minZoom = zoomState.minZoomRatio
+    val maxZoom = zoomState.maxZoomRatio
+    val clampedZoom = targetZoomRatio.coerceIn(minZoom, maxZoom)
+
+    if (clampedZoom != targetZoomRatio) {
+        Log.w("TidySnap", "Zoom ratio $targetZoomRatio clamped to $clampedZoom (range: $minZoom-$maxZoom)")
+    }
+
+    // Apply zoom asynchronously
+    camera.cameraControl.setZoomRatio(clampedZoom)
+    Log.d("TidySnap", "Zoom set to ${clampedZoom}x")
 }
 
 private fun takePhoto(

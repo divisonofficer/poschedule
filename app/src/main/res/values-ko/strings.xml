@@ -42,7 +42,42 @@
     <string name="desc_llm_copy">개인화된 부드러운 회복 메시지를 받습니다</string>
     <string name="label_vision_consent">비전 분석 동의</string>
     <string name="desc_vision_consent">타이디 스냅 집안일 분석을 위해 카메라 사용을 허용합니다</string>
-    
+
+    <!-- API Provider Settings (Korean) -->
+    <string name="section_api_provider">AI 제공자</string>
+    <string name="label_api_provider">AI 서비스</string>
+    <string name="desc_api_provider">어시스턴트를 구동할 AI 서비스를 선택하세요</string>
+    <string name="provider_postech">포스텍 GenAI</string>
+    <string name="provider_gemini">제미나이</string>
+
+    <string name="label_postech_model">모델 선택</string>
+    <string name="desc_postech_model">사용할 AI 모델을 선택하세요</string>
+    <string name="model_gpt">GPT</string>
+    <string name="model_gemini">제미나이</string>
+    <string name="model_claude">클로드</string>
+
+    <!-- Gemini Onboarding (Korean) -->
+    <string name="title_gemini_setup">제미나이 활성화</string>
+    <string name="desc_gemini_setup">구글 AI를 사용하려면 제미나이 키를 받으세요</string>
+    <string name="label_gemini_key">키</string>
+    <string name="hint_gemini_key">제미나이 API 키를 붙여넣으세요</string>
+    <string name="action_test_key">키 테스트</string>
+    <string name="action_save_key">키 저장</string>
+    <string name="status_testing">키 테스트 중...</string>
+    <string name="status_key_valid">유효한 키입니다!</string>
+    <string name="status_key_invalid">유효하지 않은 키입니다</string>
+    <string name="help_how_to_get_key">키는 어떻게 받나요?</string>
+    <string name="help_gemini_intro">제미나이 API 키는 무료이며 약 1분이면 받을 수 있어요:</string>
+    <string name="help_step_1">1️⃣ 아래 버튼을 눌러 Google AI Studio를 여세요</string>
+    <string name="help_step_2">2️⃣ 구글 계정으로 로그인하세요</string>
+    <string name="help_step_3">3️⃣ \"Get API Key\"를 클릭하고 복사한 뒤, 위에 붙여넣으세요</string>
+    <string name="action_open_browser">🌐 Google AI Studio 열기</string>
+    <string name="help_note">키는 본인 소유이며 이 기기에만 저장됩니다. 무료 플랜은 분당 15회 요청이 가능합니다.</string>
+    <string name="warning_key_stored_locally">키는 이 기기에만 안전하게 저장됩니다</string>
+    <string name="action_configure_gemini">제미나이 설정</string>
+    <string name="status_gemini_configured">제미나이 활성화됨</string>
+    <string name="status_gemini_not_configured">제미나이 키 필요</string>
+
     <string name="label_language">앱 언어</string>
     <string name="lang_en">English</string>
     <string name="lang_ko">한국어</string>
@@ -89,6 +124,28 @@
     <string name="channel_core_desc">약 복용, 식사 등 중요한 일일 과업</string>
     <string name="channel_updates_name">일정 업데이트</string>
     <string name="channel_recovery_name">회복 지원</string>
+    <string name="channel_status_companion_name">상태 알림</string>
+    <string name="channel_status_companion_desc">현재 모드와 다음 일정을 보여주는 고정 알림</string>
+
+    <!-- Mode Labels -->
+    <string name="mode_normal">일반 모드</string>
+    <string name="mode_recovery">회복 모드</string>
+    <string name="mode_low_mood">무기력 모드</string>
+    <string name="mode_busy">바쁜 모드</string>
+
+    <!-- Status Companion -->
+    <string name="companion_no_plans">오늘 할 일이 없어요</string>
+    <string name="companion_action_snooze">15분 후</string>
+    <string name="companion_action_done">완료</string>
+    <string name="companion_action_open">하루 열기</string>
+    <string name="companion_next_plan">다음: %1$s (%2$s)</string>
+
+    <!-- Settings - Notifications Section -->
+    <string name="settings_notifications">알림</string>
+    <string name="settings_status_companion">상태 알림 (고정)</string>
+    <string name="settings_status_companion_desc">모드와 다음 일정을 보여주는 상시 알림</string>
+    <string name="settings_lockscreen_details">잠금화면에 일정 표시</string>
+    <string name="settings_lockscreen_details_desc">잠금화면에서 일정 세부정보 표시 (상태 알림 활성화 필요)</string>
 
     <!-- Widget -->
     <string name="widget_description">다음 대기 중인 작업과 빠른 작업 버튼을 표시합니다</string>

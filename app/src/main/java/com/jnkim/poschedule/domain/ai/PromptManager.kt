@@ -147,7 +147,11 @@ Examples of tone:
         return """
             You are a helpful assistant that converts natural language task descriptions into structured JSON for a personal schedule app.
 
-            IMPORTANT: Create only ONE single task from the user input. If the user describes multiple tasks, pick the MAIN task or the FIRST task mentioned.
+            IMPORTANT: Create only ONE single task from the user input. If the user describes multiple tasks, prioritize as follows:
+            1. Tasks with SPECIFIC TIMES (anchor=FIXED with fixedHour/fixedMinute) should be the MAIN plan
+            2. Tasks without specific times (deadlines, flexible tasks) should go in alternatives
+            3. If multiple tasks have specific times, pick the FIRST one mentioned
+            4. If no tasks have specific times, pick the FIRST task mentioned
 
             Task: Parse the user's input and output a valid JSON object following this EXACT schema:
             {
@@ -213,7 +217,11 @@ Examples of tone:
             - Clamp offset: -180 to +720 minutes
             - Clamp fixedHour: 0-23, fixedMinute: 0-59
             - If user describes multiple activities, combine them into ONE task title or pick the most important one
-            - alternatives: If user mentions multiple tasks, put the MAIN task in "plan" and other tasks in "alternatives" array as objects with {title, planType, routineType, iconEmoji}. Leave empty array [] if only one task.
+            - alternatives: If user mentions multiple tasks:
+              * Prioritize tasks with SPECIFIC TIMES (anchor=FIXED) as the MAIN plan
+              * Put tasks WITHOUT specific times (deadlines, flexible tasks) in "alternatives" array
+              * Each alternative must be an object with {title, planType, routineType, iconEmoji}
+              * Leave empty array [] if only one task
 
             Date Parsing Guidelines:
             - "16일" or "16th" = calculate the specific date (e.g., 2026-01-16 if current month is January)

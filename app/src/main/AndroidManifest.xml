@@ -67,6 +67,10 @@
             android:name=".notifications.receiver.NotificationActionReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".notifications.companion.StatusCompanionActionReceiver"
+            android:exported="false" />
+
         <!-- Widget -->
         <receiver
             android:name=".widget.PoscheduleWidgetReceiver"

@@ -1,6 +1,8 @@
 package com.jnkim.poschedule.di
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import com.jnkim.poschedule.data.ai.GeminiClient
+import com.jnkim.poschedule.data.local.AuthTokenManager
 import com.jnkim.poschedule.data.remote.api.GenAiApi
 import dagger.Module
 import dagger.Provides
@@ -58,5 +60,11 @@ object NetworkModule {
             .addConverterFactory(json.asConverterFactory(contentType))
             .build()
             .create(GenAiApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGeminiClient(tokenManager: AuthTokenManager): GeminiClient {
+        return GeminiClient(tokenManager)
     }
 }

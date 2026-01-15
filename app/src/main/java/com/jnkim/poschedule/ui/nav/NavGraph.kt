@@ -7,4 +7,5 @@ sealed class Route(val path: String) {
     object PlanEditor : Route("plan_editor")
     object TidySnap : Route("tidy_snap")
     object Debug : Route("debug")
+    object GeminiSetup : Route("gemini_setup")
 }

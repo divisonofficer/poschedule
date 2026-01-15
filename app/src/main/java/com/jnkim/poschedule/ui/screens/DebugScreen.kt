@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.jnkim.poschedule.data.repo.PlanRepository
 import com.jnkim.poschedule.domain.model.Mode
 import com.jnkim.poschedule.domain.model.NotificationCandidate
 import com.jnkim.poschedule.domain.model.NotificationClass
@@ -24,7 +25,12 @@ import com.jnkim.poschedule.notifications.NotificationHelper
 import com.jnkim.poschedule.utils.DeviceCompatibilityHelper
 import com.jnkim.poschedule.workers.DailyPlanWorker
 import com.jnkim.poschedule.workers.NotificationWorker
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
@@ -42,11 +48,30 @@ import java.util.UUID
 @Composable
 fun DebugScreen(
     notificationHelper: NotificationHelper,
+    planRepository: PlanRepository,
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
     val workManager = remember { WorkManager.getInstance(context) }
     var testCounter by remember { mutableStateOf(0) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // State for scheduled notifications
+    var pendingItems by remember { mutableStateOf<List<Pair<String, Instant>>>(emptyList()) }
+    var refreshTrigger by remember { mutableStateOf(0) }
+
+    // Load pending items with timestamps
+    LaunchedEffect(refreshTrigger) {
+        val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val items = planRepository.getPlanItems(today).first()
+        pendingItems = items
+            .filter { it.status == "PENDING" && it.startTimeMillis != null }
+            .map { item ->
+                val instant = Instant.ofEpochMilli(item.startTimeMillis!!)
+                item.title to instant
+            }
+            .sortedBy { it.second }
+    }
 
     Scaffold(
         topBar = {
@@ -71,6 +96,92 @@ fun DebugScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Section 0: Scheduled Notifications
+            SectionHeader("Scheduled Notifications")
+            Text(
+                text = "View all pending items scheduled for today with their notification times.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+
+            Button(
+                onClick = { refreshTrigger++ },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("🔄 Refresh")
+            }
+
+            if (pendingItems.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        text = "No pending items scheduled for today",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            } else {
+                val now = Instant.now()
+                val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+                    .withZone(ZoneId.systemDefault())
+
+                pendingItems.forEach { (title, scheduledTime) ->
+                    val delayMinutes = java.time.Duration.between(now, scheduledTime).toMinutes()
+                    val timeStr = formatter.format(scheduledTime)
+                    val isPast = scheduledTime.isBefore(now)
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isPast) {
+                                MaterialTheme.colorScheme.errorContainer
+                            } else if (delayMinutes < 5) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            }
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "🕐 $timeStr",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = when {
+                                        isPast -> "⚠️ PAST"
+                                        delayMinutes < 0 -> "NOW"
+                                        delayMinutes < 5 -> "🔔 in ${delayMinutes}m"
+                                        delayMinutes < 60 -> "in ${delayMinutes}m"
+                                        else -> "in ${delayMinutes / 60}h ${delayMinutes % 60}m"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
+
             // Section 1: Test Notifications
             SectionHeader("Test Notifications")
             Text(

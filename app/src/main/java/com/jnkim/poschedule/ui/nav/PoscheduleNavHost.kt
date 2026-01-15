@@ -7,9 +7,11 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.jnkim.poschedule.data.repo.PlanRepository
 import com.jnkim.poschedule.data.repo.SettingsRepository
 import com.jnkim.poschedule.notifications.NotificationHelper
 import com.jnkim.poschedule.ui.screens.DebugScreen
+import com.jnkim.poschedule.ui.screens.GeminiOnboardingScreen
 import com.jnkim.poschedule.ui.screens.LoginScreen
 import com.jnkim.poschedule.ui.screens.SettingsScreen
 import com.jnkim.poschedule.ui.screens.TodayScreen
@@ -69,11 +71,19 @@ fun PoscheduleNavHost(
                 viewModel = hiltViewModel(),
                 onBack = { navController.popBackStack() },
                 onNavigateToDebug = { navController.navigate(Route.Debug.path) },
+                onNavigateToGeminiSetup = { navController.navigate(Route.GeminiSetup.path) },
                 onLogout = {
                     navController.navigate(Route.Login.path) {
                         popUpTo(0) { inclusive = true }
                     }
                 }
+            )
+        }
+
+        composable(Route.GeminiSetup.path) {
+            GeminiOnboardingScreen(
+                viewModel = hiltViewModel(),
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -84,8 +94,14 @@ fun PoscheduleNavHost(
                 NotificationHelperEntryPoint::class.java
             ).notificationHelper()
 
+            val planRepository = EntryPointAccessors.fromApplication(
+                context.applicationContext,
+                PlanRepositoryEntryPoint::class.java
+            ).planRepository()
+
             DebugScreen(
                 notificationHelper = notificationHelper,
+                planRepository = planRepository,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -102,4 +118,10 @@ interface NotificationHelperEntryPoint {
 @InstallIn(SingletonComponent::class)
 interface SettingsRepositoryEntryPoint {
     fun settingsRepository(): SettingsRepository
+}
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface PlanRepositoryEntryPoint {
+    fun planRepository(): PlanRepository
 }

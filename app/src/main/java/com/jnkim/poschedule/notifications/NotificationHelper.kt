@@ -40,7 +40,16 @@ class NotificationHelper @Inject constructor(
                 NotificationConstants.CHANNEL_RECOVERY_NUDGES,
                 context.getString(R.string.channel_recovery_name),
                 NotificationManager.IMPORTANCE_LOW
-            )
+            ),
+
+            NotificationChannel(
+                NotificationConstants.CHANNEL_STATUS_COMPANION,
+                context.getString(R.string.channel_status_companion_name),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = context.getString(R.string.channel_status_companion_desc)
+                setSound(null, null) // Silent channel
+            }
         )
         notificationManager.createNotificationChannels(channels)
     }

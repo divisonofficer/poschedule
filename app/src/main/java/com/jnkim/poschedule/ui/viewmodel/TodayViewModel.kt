@@ -2,6 +2,9 @@ package com.jnkim.poschedule.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.jnkim.poschedule.data.local.entity.*
 import com.jnkim.poschedule.data.repo.PlanRepository
 import com.jnkim.poschedule.data.repo.SettingsRepository
@@ -11,6 +14,7 @@ import com.jnkim.poschedule.domain.ai.GentleCopyUseCase
 import com.jnkim.poschedule.domain.engine.ModeStateMachine
 import com.jnkim.poschedule.domain.engine.RecurrenceEngine
 import com.jnkim.poschedule.domain.model.Mode
+import com.jnkim.poschedule.workers.StatusCompanionRefreshWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -51,7 +55,8 @@ class TodayViewModel @Inject constructor(
     private val modeStateMachine: ModeStateMachine,
     private val recurrenceEngine: RecurrenceEngine,
     private val notificationLogDao: com.jnkim.poschedule.data.local.dao.NotificationLogDao,
-    private val llmTaskNormalizerUseCase: com.jnkim.poschedule.domain.ai.LLMTaskNormalizerUseCase
+    private val llmTaskNormalizerUseCase: com.jnkim.poschedule.domain.ai.LLMTaskNormalizerUseCase,
+    private val workManager: WorkManager
 ) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE))
@@ -187,6 +192,7 @@ class TodayViewModel @Inject constructor(
             planRepository.updateItemStatus(id, status)
             evaluateCurrentMode()
             refreshSystemMessage()
+            triggerCompanionRefresh()
         }
     }
 
@@ -198,6 +204,7 @@ class TodayViewModel @Inject constructor(
                 .toEpochMilli()
             planRepository.updateItemWithSnooze(id, "SNOOZED", snoozeUntil)
             evaluateCurrentMode()
+            triggerCompanionRefresh()
         }
     }
 
@@ -205,6 +212,7 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             planRepository.updateItemStatus(id, "SKIPPED")
             evaluateCurrentMode()
+            triggerCompanionRefresh()
         }
     }
 
@@ -212,6 +220,7 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             planRepository.stopRepeatingSeries(seriesId, _selectedDate.value)
             evaluateCurrentMode()
+            triggerCompanionRefresh()
         }
     }
 
@@ -219,6 +228,7 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             planRepository.removeOccurrence(seriesId, _selectedDate.value)
             evaluateCurrentMode()
+            triggerCompanionRefresh()
         }
     }
 
@@ -226,6 +236,7 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             planRepository.addManualItem(_selectedDate.value, title, window)
             refreshSystemMessage()
+            triggerCompanionRefresh()
         }
     }
 
@@ -261,6 +272,7 @@ class TodayViewModel @Inject constructor(
             // This ensures the plan items appear in the UI right away
             expandSeriesForCurrentWeek(series)
             refreshSystemMessage()
+            triggerCompanionRefresh()
         }
     }
 
@@ -290,6 +302,7 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             planRepository.deleteItem(id)
             refreshSystemMessage()
+            triggerCompanionRefresh()
         }
     }
 
@@ -307,6 +320,7 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             planRepository.addOneTimeEvent(title, date, startHour, startMinute, durationMinutes)
             refreshSystemMessage()
+            triggerCompanionRefresh()
         }
     }
 
@@ -461,6 +475,7 @@ class TodayViewModel @Inject constructor(
 
                 // Refresh UI
                 refreshSystemMessage()
+                triggerCompanionRefresh()
             } catch (e: Exception) {
                 android.util.Log.e("TodayViewModel", "Failed to save plan: ${e.message}", e)
                 _llmNormalizerState.value = LLMNormalizerState.Error(
@@ -554,6 +569,8 @@ class TodayViewModel @Inject constructor(
                 // Expand for current week
                 expandSeriesForCurrentWeek(series)
 
+                // Trigger companion refresh
+                triggerCompanionRefresh()
             } catch (e: Exception) {
                 android.util.Log.e("TodayViewModel", "Failed to save alternative plan: ${e.message}", e)
             }
@@ -566,6 +583,18 @@ class TodayViewModel @Inject constructor(
      */
     fun resetLLMState() {
         _llmNormalizerState.value = LLMNormalizerState.Idle
+    }
+
+    /**
+     * Triggers an immediate refresh of the Status Companion notification.
+     * Called after plan CRUD operations to keep notification up-to-date.
+     */
+    private fun triggerCompanionRefresh() {
+        workManager.enqueueUniqueWork(
+            "refresh_status_companion",
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<StatusCompanionRefreshWorker>().build()
+        )
     }
 
     /**

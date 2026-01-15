@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,6 +28,11 @@ class SettingsRepository @Inject constructor(
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val WEATHER_EFFECTS_ENABLED = booleanPreferencesKey("weather_effects_enabled")
         val MANUAL_WEATHER_STATE = stringPreferencesKey("manual_weather_state")
+        val DISMISSED_CLIPBOARD_TEXT = stringPreferencesKey("dismissed_clipboard_text")
+        val API_PROVIDER = stringPreferencesKey("api_provider")
+        val POSTECH_MODEL = stringPreferencesKey("postech_model")
+        val STATUS_COMPANION_ENABLED = booleanPreferencesKey("status_companion_enabled")
+        val LOCKSCREEN_DETAILS_ENABLED = booleanPreferencesKey("lockscreen_details_enabled")
     }
 
     val settingsFlow: Flow<UserSettings> = context.dataStore.data.map { preferences ->
@@ -40,7 +46,11 @@ class SettingsRepository @Inject constructor(
             language = preferences[PreferencesKeys.LANGUAGE] ?: "en",
             themeMode = preferences[PreferencesKeys.THEME_MODE] ?: "TIME_ADAPTIVE",
             weatherEffectsEnabled = preferences[PreferencesKeys.WEATHER_EFFECTS_ENABLED] ?: true,
-            manualWeatherState = preferences[PreferencesKeys.MANUAL_WEATHER_STATE] ?: "CLEAR"
+            manualWeatherState = preferences[PreferencesKeys.MANUAL_WEATHER_STATE] ?: "CLEAR",
+            apiProvider = preferences[PreferencesKeys.API_PROVIDER] ?: "POSTECH",
+            postechModel = preferences[PreferencesKeys.POSTECH_MODEL] ?: "a3/claude",
+            statusCompanionEnabled = preferences[PreferencesKeys.STATUS_COMPANION_ENABLED] ?: false,
+            lockscreenDetailsEnabled = preferences[PreferencesKeys.LOCKSCREEN_DETAILS_ENABLED] ?: false
         )
     }
 
@@ -75,6 +85,39 @@ class SettingsRepository @Inject constructor(
     suspend fun updateManualWeatherState(state: String) {
         context.dataStore.edit { it[PreferencesKeys.MANUAL_WEATHER_STATE] = state }
     }
+
+    /**
+     * Saves the dismissed clipboard text so we don't prompt again for the same content.
+     */
+    suspend fun saveDismissedClipboardText(text: String) {
+        context.dataStore.edit { it[PreferencesKeys.DISMISSED_CLIPBOARD_TEXT] = text }
+    }
+
+    /**
+     * Gets the last dismissed clipboard text.
+     */
+    suspend fun getDismissedClipboardText(): String? {
+        val preferences = context.dataStore.data.map { preferences ->
+            preferences[PreferencesKeys.DISMISSED_CLIPBOARD_TEXT]
+        }
+        return preferences.first()
+    }
+
+    suspend fun updateApiProvider(provider: String) {
+        context.dataStore.edit { it[PreferencesKeys.API_PROVIDER] = provider }
+    }
+
+    suspend fun updatePostechModel(model: String) {
+        context.dataStore.edit { it[PreferencesKeys.POSTECH_MODEL] = model }
+    }
+
+    suspend fun updateStatusCompanionEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.STATUS_COMPANION_ENABLED] = enabled }
+    }
+
+    suspend fun updateLockscreenDetailsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.LOCKSCREEN_DETAILS_ENABLED] = enabled }
+    }
 }
 
 data class UserSettings(
@@ -87,5 +130,9 @@ data class UserSettings(
     val language: String,
     val themeMode: String,
     val weatherEffectsEnabled: Boolean,
-    val manualWeatherState: String
+    val manualWeatherState: String,
+    val apiProvider: String,
+    val postechModel: String,
+    val statusCompanionEnabled: Boolean,
+    val lockscreenDetailsEnabled: Boolean
 )

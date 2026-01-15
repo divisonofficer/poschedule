@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -29,6 +30,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
     onNavigateToDebug: () -> Unit,
+    onNavigateToGeminiSetup: () -> Unit,
     onLogout: () -> Unit
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -129,6 +131,95 @@ fun SettingsScreen(
                                 }
                                 IconButton(onClick = { viewModel.fetchApiKey() }) {
                                     Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_fetch_key))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // API Provider Section
+                Text(stringResource(R.string.section_api_provider), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    settings?.let { s ->
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            // Provider Selection
+                            Text(stringResource(R.string.label_api_provider), style = MaterialTheme.typography.bodyLarge)
+                            Text(stringResource(R.string.desc_api_provider), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+
+                            GlassSegmentedControl(
+                                options = listOf(
+                                    stringResource(R.string.provider_postech),
+                                    stringResource(R.string.provider_gemini)
+                                ),
+                                selectedIndex = if (s.apiProvider == "POSTECH") 0 else 1,
+                                onSelectionChange = { index ->
+                                    viewModel.updateApiProvider(if (index == 0) "POSTECH" else "GEMINI")
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // POSTECH Model Selection (only show if POSTECH selected)
+                            if (s.apiProvider == "POSTECH") {
+                                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                                Text(stringResource(R.string.label_postech_model), style = MaterialTheme.typography.bodyLarge)
+                                Text(stringResource(R.string.desc_postech_model), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+
+                                GlassSegmentedControl(
+                                    options = listOf(
+                                        stringResource(R.string.model_gpt),
+                                        stringResource(R.string.model_gemini),
+                                        stringResource(R.string.model_claude)
+                                    ),
+                                    selectedIndex = when (s.postechModel) {
+                                        "a1/gpt" -> 0
+                                        "a2/gemini" -> 1
+                                        "a3/claude" -> 2
+                                        else -> 2
+                                    },
+                                    onSelectionChange = { index ->
+                                        val model = when (index) {
+                                            0 -> "a1/gpt"
+                                            1 -> "a2/gemini"
+                                            2 -> "a3/claude"
+                                            else -> "a3/claude"
+                                        }
+                                        viewModel.updatePostechModel(model)
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            // Gemini Configuration (only show if GEMINI selected)
+                            if (s.apiProvider == "GEMINI") {
+                                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(stringResource(R.string.label_gemini_key), style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            if (viewModel.isGeminiKeyConfigured()) {
+                                                stringResource(R.string.status_gemini_configured)
+                                            } else {
+                                                stringResource(R.string.status_gemini_not_configured)
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (viewModel.isGeminiKeyConfigured()) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.error
+                                            }
+                                        )
+                                    }
+                                    GlassButton(
+                                        text = stringResource(R.string.action_configure_gemini),
+                                        onClick = onNavigateToGeminiSetup,
+                                        style = GlassButtonStyle.SECONDARY
+                                    )
                                 }
                             }
                         }
@@ -279,6 +370,59 @@ fun SettingsScreen(
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+
+                // Notifications Section
+                Text(stringResource(R.string.settings_notifications), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    settings?.let { s ->
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            // Status Companion Toggle
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(stringResource(R.string.settings_status_companion), style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        stringResource(R.string.settings_status_companion_desc),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                }
+                                GlassToggle(
+                                    checked = s.statusCompanionEnabled,
+                                    onCheckedChange = { viewModel.updateStatusCompanionEnabled(it) }
+                                )
+                            }
+
+                            Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                            // Lockscreen Details Toggle (only enabled if companion enabled)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .alpha(if (s.statusCompanionEnabled) 1.0f else 0.5f),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(stringResource(R.string.settings_lockscreen_details), style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        stringResource(R.string.settings_lockscreen_details_desc),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                }
+                                GlassToggle(
+                                    checked = s.lockscreenDetailsEnabled,
+                                    onCheckedChange = { viewModel.updateLockscreenDetailsEnabled(it) },
+                                    enabled = s.statusCompanionEnabled
+                                )
                             }
                         }
                     }

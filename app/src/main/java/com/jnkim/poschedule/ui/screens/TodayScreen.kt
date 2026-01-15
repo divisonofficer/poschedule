@@ -148,9 +148,13 @@ fun TodayScreen(
             if (clipData != null && clipData.itemCount > 0) {
                 val text = clipData.getItemAt(0).text?.toString()
                 if (!text.isNullOrBlank() && text.length > 10 && text.length < 1000) {
-                    // Only prompt for meaningful text (10-1000 chars)
-                    clipboardText = text
-                    showClipboardPrompt = true
+                    // Check if this text was previously dismissed
+                    val dismissedText = settingsRepository.getDismissedClipboardText()
+                    if (text != dismissedText) {
+                        // Only prompt for meaningful text (10-1000 chars) that hasn't been dismissed
+                        clipboardText = text
+                        showClipboardPrompt = true
+                    }
                 }
             }
         }
@@ -227,8 +231,16 @@ fun TodayScreen(
 
     // Clipboard Prompt Dialog
     if (showClipboardPrompt) {
+        val coroutineScope = rememberCoroutineScope()
+
         AlertDialog(
-            onDismissRequest = { showClipboardPrompt = false },
+            onDismissRequest = {
+                showClipboardPrompt = false
+                // Save dismissed text so we don't prompt again
+                coroutineScope.launch {
+                    settingsRepository.saveDismissedClipboardText(clipboardText)
+                }
+            },
             title = { Text("클립보드에서 만들까요?") },
             text = {
                 Column {
@@ -261,7 +273,13 @@ fun TodayScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showClipboardPrompt = false }) {
+                TextButton(onClick = {
+                    showClipboardPrompt = false
+                    // Save dismissed text so we don't prompt again
+                    coroutineScope.launch {
+                        settingsRepository.saveDismissedClipboardText(clipboardText)
+                    }
+                }) {
                     Text("취소")
                 }
             },

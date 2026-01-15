@@ -32,6 +32,10 @@ import com.jnkim.poschedule.ui.theme.PoscheduleTheme
 import com.jnkim.poschedule.ui.viewmodel.AuthViewModel
 import com.jnkim.poschedule.utils.DeviceCompatibilityHelper
 import com.jnkim.poschedule.workers.DailyPlanWorker
+import com.jnkim.poschedule.workers.StatusCompanionWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import java.util.concurrent.TimeUnit
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -88,6 +92,13 @@ class MainActivity : AppCompatActivity() {
         // Trigger Daily Plan generation for demo/MVP purposes
         val workRequest = OneTimeWorkRequestBuilder<DailyPlanWorker>().build()
         WorkManager.getInstance(this).enqueue(workRequest)
+
+        // Schedule Status Companion periodic worker based on settings
+        lifecycleScope.launch {
+            settingsRepository.settingsFlow.collect { settings ->
+                scheduleStatusCompanionWorker(settings.statusCompanionEnabled)
+            }
+        }
 
         enableEdgeToEdge()
         setContent {
@@ -187,5 +198,34 @@ class MainActivity : AppCompatActivity() {
             }
             .setCancelable(true)
             .show()
+    }
+
+    /**
+     * Schedules or cancels the Status Companion periodic worker based on settings.
+     *
+     * @param enabled Whether the companion feature is enabled
+     */
+    private fun scheduleStatusCompanionWorker(enabled: Boolean) {
+        val workManager = WorkManager.getInstance(this)
+
+        if (enabled) {
+            // Schedule periodic worker (15 minute intervals)
+            val periodicWork = PeriodicWorkRequestBuilder<StatusCompanionWorker>(
+                repeatInterval = 15,
+                repeatIntervalTimeUnit = TimeUnit.MINUTES
+            ).build()
+
+            workManager.enqueueUniquePeriodicWork(
+                "status_companion_periodic",
+                ExistingPeriodicWorkPolicy.KEEP,
+                periodicWork
+            )
+
+            android.util.Log.d("MainActivity", "Status Companion periodic worker scheduled (15min)")
+        } else {
+            // Cancel periodic worker and notification
+            workManager.cancelUniqueWork("status_companion_periodic")
+            android.util.Log.d("MainActivity", "Status Companion periodic worker cancelled")
+        }
     }
 }

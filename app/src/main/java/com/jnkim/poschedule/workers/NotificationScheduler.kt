@@ -100,13 +100,26 @@ class NotificationScheduler @Inject constructor(
     private fun findNextPendingWindowStart(items: List<PlanItemEntity>): Instant? {
         val now = Instant.now()
 
-        return items
-            .filter { it.status == "PENDING" && it.startTimeMillis != null }
+        Log.d(TAG, "Finding next window from ${items.size} items")
+
+        val pendingItems = items.filter { it.status == "PENDING" && it.startTimeMillis != null }
+        Log.d(TAG, "Found ${pendingItems.size} pending items with startTimeMillis")
+
+        pendingItems.forEach { item ->
+            val start = Instant.ofEpochMilli(item.startTimeMillis!!)
+            val isAfterNow = start.isAfter(now)
+            Log.d(TAG, "Item: ${item.title} | start=$start | now=$now | isAfter=$isAfterNow | startMillis=${item.startTimeMillis}")
+        }
+
+        val result = pendingItems
             .mapNotNull { item ->
                 val start = Instant.ofEpochMilli(item.startTimeMillis!!)
                 if (start.isAfter(now)) start else null
             }
             .minOrNull()
+
+        Log.d(TAG, "Next window start: $result")
+        return result
     }
 
     /**

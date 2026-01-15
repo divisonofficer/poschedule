@@ -42,7 +42,42 @@
     <string name="desc_llm_copy">Personalized gentle recovery messages</string>
     <string name="label_vision_consent">Vision Consent</string>
     <string name="desc_vision_consent">Allow camera for Tidy Snap chores</string>
-    
+
+    <!-- API Provider Settings -->
+    <string name="section_api_provider">AI Provider</string>
+    <string name="label_api_provider">AI Service</string>
+    <string name="desc_api_provider">Choose which AI service powers your assistant</string>
+    <string name="provider_postech">POSTECH GenAI</string>
+    <string name="provider_gemini">Gemini</string>
+
+    <string name="label_postech_model">Model Selection</string>
+    <string name="desc_postech_model">Choose which AI model to use</string>
+    <string name="model_gpt">GPT</string>
+    <string name="model_gemini">Gemini</string>
+    <string name="model_claude">Claude</string>
+
+    <!-- Gemini Onboarding -->
+    <string name="title_gemini_setup">Activate Gemini</string>
+    <string name="desc_gemini_setup">Get your own Gemini key to use Google\'s AI</string>
+    <string name="label_gemini_key">Your Key</string>
+    <string name="hint_gemini_key">Paste your Gemini API key here</string>
+    <string name="action_test_key">Test Key</string>
+    <string name="action_save_key">Save Key</string>
+    <string name="status_testing">Testing key...</string>
+    <string name="status_key_valid">Key is valid!</string>
+    <string name="status_key_invalid">This key is not valid</string>
+    <string name="help_how_to_get_key">How to get a key?</string>
+    <string name="help_gemini_intro">Getting a Gemini API key is free and takes about 1 minute:</string>
+    <string name="help_step_1">1️⃣ Click the button below to open Google AI Studio</string>
+    <string name="help_step_2">2️⃣ Sign in with your Google account</string>
+    <string name="help_step_3">3️⃣ Click \"Get API Key\" and copy it, then paste it above</string>
+    <string name="action_open_browser">🌐 Open Google AI Studio</string>
+    <string name="help_note">The key is yours and stored only on this device. Free tier includes 15 requests per minute.</string>
+    <string name="warning_key_stored_locally">Your key is stored securely on this device only</string>
+    <string name="action_configure_gemini">Configure Gemini</string>
+    <string name="status_gemini_configured">Gemini is active</string>
+    <string name="status_gemini_not_configured">Gemini key needed</string>
+
     <string name="label_language">App Language</string>
     <string name="lang_en">English</string>
     <string name="lang_ko">한국어</string>
@@ -89,6 +124,28 @@
     <string name="channel_core_desc">Important daily tasks like medications and meals</string>
     <string name="channel_updates_name">Schedule Updates</string>
     <string name="channel_recovery_name">Recovery Support</string>
+    <string name="channel_status_companion_name">Status Companion</string>
+    <string name="channel_status_companion_desc">Ongoing notification showing your current mode and next plan</string>
+
+    <!-- Mode Labels -->
+    <string name="mode_normal">Normal Mode</string>
+    <string name="mode_recovery">Recovery Mode</string>
+    <string name="mode_low_mood">Low Mood Mode</string>
+    <string name="mode_busy">Busy Mode</string>
+
+    <!-- Status Companion -->
+    <string name="companion_no_plans">No plans for today</string>
+    <string name="companion_action_snooze">Snooze 15m</string>
+    <string name="companion_action_done">Done</string>
+    <string name="companion_action_open">Open Day</string>
+    <string name="companion_next_plan">Next: %1$s at %2$s</string>
+
+    <!-- Settings - Notifications Section -->
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_status_companion">Status Companion</string>
+    <string name="settings_status_companion_desc">Always-visible notification showing mode and next plan</string>
+    <string name="settings_lockscreen_details">Show Details on Lockscreen</string>
+    <string name="settings_lockscreen_details_desc">Display plan details on lockscreen (requires companion enabled)</string>
 
     <!-- Widget -->
     <string name="widget_description">Shows your next pending task with quick actions</string>

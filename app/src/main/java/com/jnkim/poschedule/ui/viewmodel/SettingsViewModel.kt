@@ -27,7 +27,8 @@ class SettingsViewModel @Inject constructor(
     private val repository: SettingsRepository,
     private val tokenManager: AuthTokenManager,
     private val planRepository: PlanRepository,
-    private val genAiRepository: com.jnkim.poschedule.data.repo.GenAiRepository
+    private val genAiRepository: com.jnkim.poschedule.data.repo.GenAiRepository,
+    private val geminiClient: com.jnkim.poschedule.data.ai.GeminiClient
 ) : ViewModel() {
 
     val settings: StateFlow<UserSettings?> = repository.settingsFlow.stateIn(
@@ -83,6 +84,49 @@ class SettingsViewModel @Inject constructor(
 
     fun updateManualWeatherState(state: String) {
         viewModelScope.launch { repository.updateManualWeatherState(state) }
+    }
+
+    fun updateStatusCompanionEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.updateStatusCompanionEnabled(enabled) }
+    }
+
+    fun updateLockscreenDetailsEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.updateLockscreenDetailsEnabled(enabled) }
+    }
+
+    fun updateApiProvider(provider: String) {
+        viewModelScope.launch { repository.updateApiProvider(provider) }
+    }
+
+    fun updatePostechModel(model: String) {
+        viewModelScope.launch { repository.updatePostechModel(model) }
+    }
+
+    /**
+     * Validates and saves Gemini API key.
+     * Returns true if validation successful, false otherwise.
+     */
+    suspend fun validateAndSaveGeminiKey(apiKey: String): Boolean {
+        return try {
+            android.util.Log.d("SettingsViewModel", "Validating Gemini API key...")
+            val isValid = geminiClient.validateApiKey(apiKey)
+
+            if (isValid) {
+                tokenManager.saveGeminiApiKey(apiKey)
+                android.util.Log.d("SettingsViewModel", "Gemini API key saved successfully")
+                true
+            } else {
+                android.util.Log.e("SettingsViewModel", "Gemini API key validation failed")
+                false
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsViewModel", "Error validating Gemini key: ${e.message}", e)
+            false
+        }
+    }
+
+    fun isGeminiKeyConfigured(): Boolean {
+        return tokenManager.getGeminiApiKey() != null
     }
 
     /**

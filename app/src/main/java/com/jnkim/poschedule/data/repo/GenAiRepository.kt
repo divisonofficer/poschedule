@@ -1,5 +1,6 @@
 package com.jnkim.poschedule.data.repo
 
+import com.jnkim.poschedule.data.ai.GeminiClient
 import com.jnkim.poschedule.data.local.AuthTokenManager
 import com.jnkim.poschedule.data.remote.api.*
 import kotlinx.coroutines.flow.first
@@ -14,7 +15,8 @@ import javax.inject.Singleton
 class GenAiRepository @Inject constructor(
     private val api: GenAiApi,
     private val tokenManager: AuthTokenManager,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val geminiClient: GeminiClient
 ) {
     private val baseUrl = "https://genai.postech.ac.kr"
 
@@ -51,7 +53,7 @@ class GenAiRepository @Inject constructor(
     }
 
     /**
-     * Executes a chat completion request, optionally including uploaded files for multi-modal analysis.
+     * Executes a chat completion request, routing to POSTECH or Gemini based on user settings.
      */
     suspend fun getCompletion(
         prompt: String,
@@ -59,9 +61,27 @@ class GenAiRepository @Inject constructor(
         files: List<GenAiFile> = emptyList()
     ): String? {
         val settings = settingsRepository.settingsFlow.first()
+
+        return when (settings.apiProvider) {
+            "GEMINI" -> getCompletionFromGemini(prompt, systemPrompt, files)
+            else -> getCompletionFromPostech(prompt, systemPrompt, files, settings.postechModel)
+        }
+    }
+
+    /**
+     * POSTECH GenAI API completion (existing logic, now extracted)
+     */
+    private suspend fun getCompletionFromPostech(
+        prompt: String,
+        systemPrompt: String,
+        files: List<GenAiFile>,
+        model: String
+    ): String? {
+        val settings = settingsRepository.settingsFlow.first()
         val accessToken = tokenManager.getAccessToken()
         var apiKey = tokenManager.getApiKey()
 
+        android.util.Log.d("GenAiRepository", "Using POSTECH API with model: $model")
         android.util.Log.d("GenAiRepository", "Checking credentials: accessToken=${accessToken != null}, apiKey=${apiKey != null}, siteName=${settings.siteName}")
 
         if (accessToken == null) {
@@ -97,9 +117,10 @@ class GenAiRepository @Inject constructor(
         var lastException: Exception? = null
         repeat(3) { attempt ->
             try {
-                val fullUrl = "$baseUrl/agent/api/a3/claude"
+                val fullUrl = "$baseUrl/agent/api/$model"
                 android.util.Log.d("GenAiRepository", "=== API REQUEST DEBUG (Attempt ${attempt + 1}/3) ===")
                 android.util.Log.d("GenAiRepository", "Full URL: $fullUrl")
+                android.util.Log.d("GenAiRepository", "Model: $model")
                 android.util.Log.d("GenAiRepository", "Headers:")
                 android.util.Log.d("GenAiRepository", "  X-API-Key: ${apiKey.take(20)}...")
                 android.util.Log.d("GenAiRepository", "  Origin: https://genai.postech.ac.kr")
@@ -112,7 +133,7 @@ class GenAiRepository @Inject constructor(
                 android.util.Log.d("GenAiRepository", "========================")
 
                 val response = api.getCompletion(
-                    model = "a3/claude",  // Using Claude model
+                    model = model,
                     apiKey = apiKey,
                     request = request
                 )
@@ -130,7 +151,7 @@ class GenAiRepository @Inject constructor(
                         android.util.Log.d("GenAiRepository", "Retrying with refreshed API key...")
                         try {
                             val response = api.getCompletion(
-                                model = "a3/claude",
+                                model = model,
                                 apiKey = newApiKey,
                                 request = request
                             )
@@ -153,19 +174,18 @@ class GenAiRepository @Inject constructor(
                 android.util.Log.w("GenAiRepository", "Timeout on attempt ${attempt + 1}/3: ${e.message}")
                 if (attempt < 2) {
                     android.util.Log.d("GenAiRepository", "Waiting 2 seconds before retry...")
-                    kotlinx.coroutines.delay(2000) // Wait 2 seconds before retry
+                    kotlinx.coroutines.delay(2000)
                 }
             } catch (e: java.io.IOException) {
                 lastException = e
                 android.util.Log.w("GenAiRepository", "Network error on attempt ${attempt + 1}/3: ${e.message}")
                 if (attempt < 2) {
                     android.util.Log.d("GenAiRepository", "Waiting 2 seconds before retry...")
-                    kotlinx.coroutines.delay(2000) // Wait 2 seconds before retry
+                    kotlinx.coroutines.delay(2000)
                 }
             } catch (e: Exception) {
                 lastException = e
                 android.util.Log.e("GenAiRepository", "API call failed on attempt ${attempt + 1}/3: ${e.message}", e)
-                // For other exceptions, don't retry
                 return null
             }
         }
@@ -173,6 +193,23 @@ class GenAiRepository @Inject constructor(
         // All retries exhausted
         android.util.Log.e("GenAiRepository", "All 3 attempts failed. Last error: ${lastException?.message}", lastException)
         return null
+    }
+
+    /**
+     * Google Gemini API completion (new)
+     */
+    private suspend fun getCompletionFromGemini(
+        prompt: String,
+        systemPrompt: String,
+        files: List<GenAiFile>
+    ): String? {
+        android.util.Log.d("GenAiRepository", "Using Gemini API")
+
+        if (files.isNotEmpty()) {
+            android.util.Log.w("GenAiRepository", "Gemini vision support not implemented, ignoring ${files.size} files")
+        }
+
+        return geminiClient.getCompletion(prompt, systemPrompt, files)
     }
 
     /**

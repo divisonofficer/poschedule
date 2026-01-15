@@ -39,6 +39,18 @@ class AuthTokenManager @Inject constructor(
         return sharedPreferences.getString("api_key", null)
     }
 
+    fun saveGeminiApiKey(apiKey: String) {
+        sharedPreferences.edit().putString("gemini_api_key", apiKey).apply()
+    }
+
+    fun getGeminiApiKey(): String? {
+        return sharedPreferences.getString("gemini_api_key", null)
+    }
+
+    fun clearGeminiApiKey() {
+        sharedPreferences.edit().remove("gemini_api_key").apply()
+    }
+
     fun clearAll() {
         sharedPreferences.edit().clear().apply()
     }

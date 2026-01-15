@@ -136,6 +136,12 @@ class PlanRepository @Inject constructor(
         val startMillis = startDateTime.atZone(zoneId).toInstant().toEpochMilli()
         val endMillis = endDateTime.atZone(zoneId).toInstant().toEpochMilli()
 
+        android.util.Log.d("PlanRepository",
+            "addOneTimeEvent: $title on $date at $startHour:$startMinute | " +
+            "startDateTime=$startDateTime, startMillis=$startMillis | " +
+            "timezone=${zoneId.id}"
+        )
+
         val item = PlanItemEntity(
             id = UUID.randomUUID().toString(),
             date = date,
