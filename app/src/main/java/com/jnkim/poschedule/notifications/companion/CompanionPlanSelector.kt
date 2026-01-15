@@ -5,6 +5,7 @@ import com.jnkim.poschedule.data.local.entity.PlanItemEntity
 import com.jnkim.poschedule.domain.model.EmojiMapper
 import com.jnkim.poschedule.domain.model.Mode
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -24,7 +25,10 @@ import java.util.Locale
 object CompanionPlanSelector {
 
     /**
-     * Selects the next important plan.
+     * Selects the next important plan (legacy method).
+     *
+     * **Deprecated in V2:** Use selectNextImportantPlans() for multiple plan support.
+     * This method delegates to selectNextImportantPlans() with maxCount = 1.
      *
      * @param plans List of all plan items for today
      * @param mode Current mode
@@ -40,54 +44,14 @@ object CompanionPlanSelector {
         context: Context,
         language: String
     ): NextPlanInfo? {
-        // Determine lookAhead window based on mode
-        val lookAheadHours = when (mode) {
-            Mode.NORMAL, Mode.LOW_MOOD -> 6
-            Mode.RECOVERY, Mode.BUSY -> 12
-        }
-        val lookAheadMillis = lookAheadHours * 60 * 60 * 1000L
-        val windowEnd = currentTime + lookAheadMillis
-
-        // Filter eligible plans
-        val eligiblePlans = plans.filter { plan ->
-            // Status must be PENDING
-            val isPending = plan.status == "PENDING"
-
-            // Must have a start time and be within the lookahead window
-            val isInWindow = plan.startTimeMillis != null &&
-                plan.startTimeMillis >= currentTime &&
-                plan.startTimeMillis <= windowEnd
-
-            isPending && isInWindow
-        }
-
-        if (eligiblePlans.isEmpty()) {
-            return null
-        }
-
-        // Score and select top plan
-        val scoredPlans = eligiblePlans.map { plan ->
-            plan to calculateScore(plan, mode, currentTime)
-        }.sortedByDescending { it.second }
-
-        val topPlan = scoredPlans.firstOrNull()?.first ?: return null
-
-        // Format time based on language
-        val formattedTime = formatTime(topPlan.startTimeMillis ?: currentTime, language)
-
-        // Get emoji for the plan
-        val emoji = EmojiMapper.getEmojiForPlan(
-            title = topPlan.title,
-            planType = topPlan.type?.name
-        )
-
-        return NextPlanInfo(
-            planId = topPlan.id.hashCode().toLong(),
-            emoji = emoji,
-            title = topPlan.title,
-            targetTime = topPlan.startTimeMillis ?: currentTime,
-            formattedTime = formattedTime
-        )
+        return selectNextImportantPlans(
+            plans = plans,
+            mode = mode,
+            currentTime = currentTime,
+            context = context,
+            language = language,
+            maxCount = 1
+        ).firstOrNull()
     }
 
     /**
@@ -162,5 +126,126 @@ object CompanionPlanSelector {
         val pattern = if (language == "ko") "a h:mm" else "h:mm a"
         val formatter = SimpleDateFormat(pattern, locale)
         return formatter.format(Date(timeMillis))
+    }
+
+    /**
+     * Selects multiple next important plans (V2 - 2026 Upgrade).
+     *
+     * Uses same scoring formula as selectNextImportant() but returns up to maxCount plans.
+     *
+     * @param plans List of all plan items for today
+     * @param mode Current mode
+     * @param currentTime Current time in milliseconds
+     * @param context Android context for string formatting
+     * @param language Language code (e.g., "ko", "en") for time formatting
+     * @param maxCount Maximum number of plans to return (default 2)
+     * @return List of NextPlanInfo for selected plans (may be empty)
+     */
+    fun selectNextImportantPlans(
+        plans: List<PlanItemEntity>,
+        mode: Mode,
+        currentTime: Long,
+        context: Context,
+        language: String,
+        maxCount: Int = 2
+    ): List<NextPlanInfo> {
+        // Determine lookAhead window based on mode
+        val lookAheadHours = when (mode) {
+            Mode.NORMAL, Mode.LOW_MOOD -> 6
+            Mode.RECOVERY, Mode.BUSY -> 12
+        }
+        val lookAheadMillis = lookAheadHours * 60 * 60 * 1000L
+        val windowEnd = currentTime + lookAheadMillis
+
+        // Filter eligible plans
+        val eligiblePlans = plans.filter { plan ->
+            val isPending = plan.status == "PENDING"
+            val isInWindow = plan.startTimeMillis != null &&
+                plan.startTimeMillis >= currentTime &&
+                plan.startTimeMillis <= windowEnd
+            isPending && isInWindow
+        }
+
+        if (eligiblePlans.isEmpty()) {
+            return emptyList()
+        }
+
+        // Score and select top plans
+        val scoredPlans = eligiblePlans.map { plan ->
+            plan to calculateScore(plan, mode, currentTime)
+        }.sortedByDescending { it.second }
+            .take(maxCount)
+
+        // Map to NextPlanInfo
+        return scoredPlans.map { (plan, _) ->
+            val formattedTime = formatTimeForPlan(
+                timeMillis = plan.startTimeMillis ?: currentTime,
+                currentTime = currentTime,
+                language = language
+            )
+
+            val emoji = EmojiMapper.getEmojiForPlan(
+                title = plan.title,
+                planType = plan.type?.name
+            )
+
+            NextPlanInfo(
+                planId = plan.id.hashCode().toLong(),
+                emoji = emoji,
+                title = plan.title,
+                targetTime = plan.startTimeMillis ?: currentTime,
+                formattedTime = formattedTime
+            )
+        }
+    }
+
+    /**
+     * Formats time for a plan with smart date awareness (V2 - 2026 Upgrade).
+     *
+     * Shows exact time if within 2 hours, otherwise shows relative day.
+     *
+     * @param timeMillis Plan target time in milliseconds
+     * @param currentTime Current time in milliseconds
+     * @param language Language code ("ko" or "en")
+     * @return Formatted time string (e.g., "15:42", "오늘", "내일", "Tomorrow")
+     */
+    private fun formatTimeForPlan(
+        timeMillis: Long,
+        currentTime: Long,
+        language: String
+    ): String {
+        val timeDiff = timeMillis - currentTime
+        val twoHoursInMillis = 2 * 60 * 60 * 1000L
+
+        // If within 2 hours, show exact time
+        if (timeDiff <= twoHoursInMillis) {
+            val locale = if (language == "ko") Locale.KOREAN else Locale.ENGLISH
+            val pattern = if (language == "ko") "HH:mm" else "h:mm a"
+            val formatter = SimpleDateFormat(pattern, locale)
+            return formatter.format(Date(timeMillis))
+        }
+
+        // Check if today or tomorrow
+        val planCalendar = Calendar.getInstance().apply {
+            this.timeInMillis = timeMillis
+        }
+        val currentCalendar = Calendar.getInstance().apply {
+            this.timeInMillis = currentTime
+        }
+
+        val planDay = planCalendar.get(Calendar.DAY_OF_YEAR)
+        val currentDay = currentCalendar.get(Calendar.DAY_OF_YEAR)
+
+        return when {
+            planDay == currentDay -> if (language == "ko") "오늘" else "Today"
+            planDay == currentDay + 1 -> if (language == "ko") "내일" else "Tomorrow"
+            else -> {
+                // Fallback to date for plans beyond tomorrow
+                val locale = if (language == "ko") Locale.KOREAN else Locale.ENGLISH
+                val pattern = if (language == "ko") "M월 d일" else "MMM d"
+                val formatter = SimpleDateFormat(pattern, locale)
+                formatter.format(Date(timeMillis))
+            }
+        }
     }
 }

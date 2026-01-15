@@ -56,6 +56,12 @@
     <string name="model_gemini">제미나이</string>
     <string name="model_claude">클로드</string>
 
+    <string name="label_gemini_model">모델 선택</string>
+    <string name="desc_gemini_model">사용할 제미나이 모델을 선택하세요 (무료 버전 지원)</string>
+    <string name="model_gemini_2_5_flash">2.5 Flash (권장)</string>
+    <string name="model_gemini_2_5_flash_lite">2.5 Flash Lite (가장 빠름)</string>
+    <string name="model_gemini_2_5_pro">2.5 Pro (고급)</string>
+
     <!-- Gemini Onboarding (Korean) -->
     <string name="title_gemini_setup">제미나이 활성화</string>
     <string name="desc_gemini_setup">구글 AI를 사용하려면 제미나이 키를 받으세요</string>
@@ -139,6 +145,16 @@
     <string name="companion_action_done">완료</string>
     <string name="companion_action_open">하루 열기</string>
     <string name="companion_next_plan">다음: %1$s (%2$s)</string>
+
+    <!-- Status Companion V2 - 2026 Upgrade -->
+    <string name="companion_day_summary">오늘: ✅ %1$d   ⏳ %2$d   ⭐ %3$d</string>
+    <string name="companion_next_label">다음</string>
+    <string name="companion_plan_line">%1$s %2$s (%3$s)</string>
+
+    <!-- Action buttons with emoji (V2) -->
+    <string name="companion_action_snooze_v2">⏰ 15분 후</string>
+    <string name="companion_action_done_v2">✔ 완료</string>
+    <string name="companion_action_open_v2">🧭 오늘</string>
 
     <!-- Settings - Notifications Section -->
     <string name="settings_notifications">알림</string>

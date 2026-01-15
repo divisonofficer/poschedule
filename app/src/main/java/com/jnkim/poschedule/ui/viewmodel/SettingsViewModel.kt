@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -102,14 +103,21 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repository.updatePostechModel(model) }
     }
 
+    fun updateGeminiModel(model: String) {
+        viewModelScope.launch { repository.updateGeminiModel(model) }
+    }
+
     /**
-     * Validates and saves Gemini API key.
+     * Validates and saves Gemini API key using the currently selected Gemini model.
      * Returns true if validation successful, false otherwise.
      */
     suspend fun validateAndSaveGeminiKey(apiKey: String): Boolean {
         return try {
-            android.util.Log.d("SettingsViewModel", "Validating Gemini API key...")
-            val isValid = geminiClient.validateApiKey(apiKey)
+            val currentSettings = repository.settingsFlow.first()
+            val modelToUse = currentSettings.geminiModel
+
+            android.util.Log.d("SettingsViewModel", "Validating Gemini API key with model: $modelToUse")
+            val isValid = geminiClient.validateApiKey(apiKey, modelToUse)
 
             if (isValid) {
                 tokenManager.saveGeminiApiKey(apiKey)

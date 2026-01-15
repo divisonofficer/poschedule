@@ -4,6 +4,7 @@ import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFact
 import com.jnkim.poschedule.data.ai.GeminiClient
 import com.jnkim.poschedule.data.local.AuthTokenManager
 import com.jnkim.poschedule.data.remote.api.GenAiApi
+import com.jnkim.poschedule.data.remote.api.GeminiApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -32,6 +33,28 @@ object NetworkModule {
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)  // Increased for vision/multimodal requests
             .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            // Content-Length header interceptor (prevents HTTP 411 errors)
+            .addInterceptor { chain ->
+                val originalRequest = chain.request()
+                val body = originalRequest.body
+
+                // If body exists and Content-Length is not already set, add it explicitly
+                val newRequest = if (body != null) {
+                    val contentLength = body.contentLength()
+                    if (contentLength >= 0 && originalRequest.header("Content-Length") == null) {
+                        originalRequest.newBuilder()
+                            .header("Content-Length", contentLength.toString())
+                            .build()
+                    } else {
+                        originalRequest
+                    }
+                } else {
+                    originalRequest
+                }
+
+                chain.proceed(newRequest)
+            }
+            // Logging interceptor (runs after Content-Length is added)
             .addInterceptor { chain ->
                 val request = chain.request()
                 val response = chain.proceed(request)
@@ -64,7 +87,19 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideGeminiClient(tokenManager: AuthTokenManager): GeminiClient {
-        return GeminiClient(tokenManager)
+    fun provideGeminiApi(okHttpClient: OkHttpClient, json: Json): GeminiApi {
+        val contentType = "application/json".toMediaType()
+        return Retrofit.Builder()
+            .baseUrl("https://generativelanguage.googleapis.com/")
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory(contentType))
+            .build()
+            .create(GeminiApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGeminiClient(tokenManager: AuthTokenManager, geminiApi: GeminiApi): GeminiClient {
+        return GeminiClient(tokenManager, geminiApi)
     }
 }

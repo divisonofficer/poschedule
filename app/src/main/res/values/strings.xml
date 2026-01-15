@@ -56,6 +56,12 @@
     <string name="model_gemini">Gemini</string>
     <string name="model_claude">Claude</string>
 
+    <string name="label_gemini_model">Model Selection</string>
+    <string name="desc_gemini_model">Choose which Gemini model to use (free tier compatible)</string>
+    <string name="model_gemini_2_5_flash">2.5 Flash (Recommended)</string>
+    <string name="model_gemini_2_5_flash_lite">2.5 Flash Lite (Fastest)</string>
+    <string name="model_gemini_2_5_pro">2.5 Pro (Advanced)</string>
+
     <!-- Gemini Onboarding -->
     <string name="title_gemini_setup">Activate Gemini</string>
     <string name="desc_gemini_setup">Get your own Gemini key to use Google\'s AI</string>
@@ -139,6 +145,16 @@
     <string name="companion_action_done">Done</string>
     <string name="companion_action_open">Open Day</string>
     <string name="companion_next_plan">Next: %1$s at %2$s</string>
+
+    <!-- Status Companion V2 - 2026 Upgrade -->
+    <string name="companion_day_summary">Today: ✅ %1$d   ⏳ %2$d   ⭐ %3$d</string>
+    <string name="companion_next_label">Next</string>
+    <string name="companion_plan_line">%1$s %2$s (%3$s)</string>
+
+    <!-- Action buttons with emoji (V2) -->
+    <string name="companion_action_snooze_v2">⏰ Snooze 15m</string>
+    <string name="companion_action_done_v2">✔ Done</string>
+    <string name="companion_action_open_v2">🧭 Today</string>
 
     <!-- Settings - Notifications Section -->
     <string name="settings_notifications">Notifications</string>

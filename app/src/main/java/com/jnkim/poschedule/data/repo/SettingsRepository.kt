@@ -31,6 +31,7 @@ class SettingsRepository @Inject constructor(
         val DISMISSED_CLIPBOARD_TEXT = stringPreferencesKey("dismissed_clipboard_text")
         val API_PROVIDER = stringPreferencesKey("api_provider")
         val POSTECH_MODEL = stringPreferencesKey("postech_model")
+        val GEMINI_MODEL = stringPreferencesKey("gemini_model")
         val STATUS_COMPANION_ENABLED = booleanPreferencesKey("status_companion_enabled")
         val LOCKSCREEN_DETAILS_ENABLED = booleanPreferencesKey("lockscreen_details_enabled")
     }
@@ -49,6 +50,7 @@ class SettingsRepository @Inject constructor(
             manualWeatherState = preferences[PreferencesKeys.MANUAL_WEATHER_STATE] ?: "CLEAR",
             apiProvider = preferences[PreferencesKeys.API_PROVIDER] ?: "POSTECH",
             postechModel = preferences[PreferencesKeys.POSTECH_MODEL] ?: "a3/claude",
+            geminiModel = preferences[PreferencesKeys.GEMINI_MODEL] ?: "gemini-2.5-flash",
             statusCompanionEnabled = preferences[PreferencesKeys.STATUS_COMPANION_ENABLED] ?: false,
             lockscreenDetailsEnabled = preferences[PreferencesKeys.LOCKSCREEN_DETAILS_ENABLED] ?: false
         )
@@ -111,6 +113,10 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { it[PreferencesKeys.POSTECH_MODEL] = model }
     }
 
+    suspend fun updateGeminiModel(model: String) {
+        context.dataStore.edit { it[PreferencesKeys.GEMINI_MODEL] = model }
+    }
+
     suspend fun updateStatusCompanionEnabled(enabled: Boolean) {
         context.dataStore.edit { it[PreferencesKeys.STATUS_COMPANION_ENABLED] = enabled }
     }
@@ -133,6 +139,7 @@ data class UserSettings(
     val manualWeatherState: String,
     val apiProvider: String,
     val postechModel: String,
+    val geminiModel: String,
     val statusCompanionEnabled: Boolean,
     val lockscreenDetailsEnabled: Boolean
 )

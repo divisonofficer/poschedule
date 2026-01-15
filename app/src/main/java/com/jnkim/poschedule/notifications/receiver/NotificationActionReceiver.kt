@@ -6,12 +6,16 @@ import android.content.Intent
 import android.util.Log
 import com.jnkim.poschedule.data.repo.PlanRepository
 import com.jnkim.poschedule.notifications.NotificationConstants
+import com.jnkim.poschedule.workers.NotificationScheduler
 import com.jnkim.poschedule.workers.WidgetUpdateWorker
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 
@@ -20,6 +24,9 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
     @Inject
     lateinit var planRepository: PlanRepository
+
+    @Inject
+    lateinit var notificationScheduler: NotificationScheduler
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
@@ -45,6 +52,12 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     val snoozeUntil = Instant.now().plus(15, ChronoUnit.MINUTES).toEpochMilli()
                     Log.d(TAG, "Snoozing item $routineId until ${Instant.ofEpochMilli(snoozeUntil)}")
                     planRepository.updateItemWithSnooze(routineId, "SNOOZED", snoozeUntil)
+
+                    // Reschedule notification worker to check at snooze expiry
+                    val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    val todayItems = planRepository.getPlanItems(today).first()
+                    notificationScheduler.scheduleNextWindowNotification(todayItems)
+                    Log.d(TAG, "Rescheduled notification worker after snooze")
                 }
             }
 

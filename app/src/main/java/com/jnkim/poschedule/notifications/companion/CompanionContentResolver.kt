@@ -9,6 +9,9 @@ import com.jnkim.poschedule.domain.ai.GentleCopyUseCase
 import com.jnkim.poschedule.domain.model.Mode
 import com.jnkim.poschedule.domain.model.ModeConstants
 import kotlinx.coroutines.flow.first
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,6 +33,8 @@ class CompanionContentResolver @Inject constructor(
     /**
      * Resolves complete notification content.
      *
+     * **V2 (2026 Upgrade):** Now includes day summary, multiple plans, and current time.
+     *
      * @param mode Current mode
      * @param plans List of all plan items for today
      * @param context Android context
@@ -50,17 +55,24 @@ class CompanionContentResolver @Inject constructor(
         // 2. Supportive message from GentleCopyUseCase
         val supportiveMessage = generateSupportiveMessage(mode, plans)
 
-        // 3. Next important plan
-        val currentTime = System.currentTimeMillis()
-        val nextPlan = CompanionPlanSelector.selectNextImportant(
+        // 3. Day summary (V2)
+        val daySummary = calculateDaySummary(plans)
+
+        // 4. Current time for title (V2)
+        val currentTime = formatCurrentTime(language)
+
+        // 5. Next important plans (V2: get up to 2)
+        val currentTimeMillis = System.currentTimeMillis()
+        val nextPlans = CompanionPlanSelector.selectNextImportantPlans(
             plans = plans,
             mode = mode,
-            currentTime = currentTime,
+            currentTime = currentTimeMillis,
             context = context,
-            language = language
+            language = language,
+            maxCount = 2
         )
 
-        // 4. Visibility based on settings
+        // 6. Visibility based on settings
         val visibility = if (settings.lockscreenDetailsEnabled) {
             Notification.VISIBILITY_PUBLIC
         } else {
@@ -71,8 +83,10 @@ class CompanionContentResolver @Inject constructor(
             modeBadge = modeBadge,
             modeLabel = modeLabel,
             supportiveMessage = supportiveMessage,
-            nextPlan = nextPlan,
-            visibility = visibility
+            daySummary = daySummary,
+            nextPlans = nextPlans,
+            visibility = visibility,
+            currentTime = currentTime
         )
     }
 
@@ -134,5 +148,36 @@ class CompanionContentResolver @Inject constructor(
             Mode.BUSY -> if (isKo) "오늘도 좋은 하루 보내세요." else "Have a productive day."
             Mode.NORMAL -> if (isKo) "오늘도 좋은 하루입니다." else "Have a great day."
         }
+    }
+
+    /**
+     * Calculates day summary from today's plans (V2 - 2026 Upgrade).
+     *
+     * @param plans All plan items for today
+     * @return DaySummary with completed, pending, and core counts
+     */
+    private fun calculateDaySummary(plans: List<PlanItemEntity>): DaySummary {
+        val completedCount = plans.count { it.status == "DONE" }
+        val pendingCount = plans.count { it.status == "PENDING" }
+        val coreCount = plans.count { it.isCore }
+
+        return DaySummary(
+            completedCount = completedCount,
+            pendingCount = pendingCount,
+            coreCount = coreCount
+        )
+    }
+
+    /**
+     * Formats current time for display in notification title (V2 - 2026 Upgrade).
+     *
+     * @param language Language code ("ko" or "en")
+     * @return Formatted time string (e.g., "15:33" for Korean, "3:33 PM" for English)
+     */
+    private fun formatCurrentTime(language: String): String {
+        val locale = if (language == "ko") Locale.KOREAN else Locale.ENGLISH
+        val pattern = if (language == "ko") "HH:mm" else "h:mm a"
+        val formatter = SimpleDateFormat(pattern, locale)
+        return formatter.format(Date(System.currentTimeMillis()))
     }
 }

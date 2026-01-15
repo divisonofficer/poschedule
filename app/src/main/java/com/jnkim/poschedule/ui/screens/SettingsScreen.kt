@@ -194,6 +194,37 @@ fun SettingsScreen(
                             if (s.apiProvider == "GEMINI") {
                                 Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
+                                // Gemini Model Selection
+                                Text(stringResource(R.string.label_gemini_model), style = MaterialTheme.typography.bodyLarge)
+                                Text(stringResource(R.string.desc_gemini_model), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+
+                                GlassSegmentedControl(
+                                    options = listOf(
+                                        stringResource(R.string.model_gemini_2_5_flash),
+                                        stringResource(R.string.model_gemini_2_5_flash_lite),
+                                        stringResource(R.string.model_gemini_2_5_pro)
+                                    ),
+                                    selectedIndex = when (s.geminiModel) {
+                                        "gemini-2.5-flash" -> 0
+                                        "gemini-2.5-flash-lite" -> 1
+                                        "gemini-2.5-pro" -> 2
+                                        else -> 0
+                                    },
+                                    onSelectionChange = { index ->
+                                        val model = when (index) {
+                                            0 -> "gemini-2.5-flash"
+                                            1 -> "gemini-2.5-flash-lite"
+                                            2 -> "gemini-2.5-pro"
+                                            else -> "gemini-2.5-flash"
+                                        }
+                                        viewModel.updateGeminiModel(model)
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+
+                                // Gemini API Key Configuration
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,

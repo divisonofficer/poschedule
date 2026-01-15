@@ -105,9 +105,6 @@ dependencies {
     // MLKit (Text recognition)
     implementation(libs.mlkit.text.recognition)
 
-    // Google Generative AI (Gemini SDK)
-    implementation(libs.google.generative.ai)
-
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -1,5 +1,6 @@
 package com.jnkim.poschedule.ui.screens
 
+import android.app.TimePickerDialog
 import android.content.ClipboardManager
 import android.content.Context
 import android.util.Log
@@ -557,55 +558,61 @@ fun TodayContent(
                     .fillMaxSize()
                     .padding(innerPadding)
                     .statusBarsPadding()
-                    .pointerInput(zoomLevel) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            var totalDragY = 0f
+            ) {
+                // Header + Week Overview (with swipe gesture)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(zoomLevel) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                var totalDragY = 0f
+                                var change = down
 
-                            Log.d("TodayGesture", "Touch down at ${down.position}, zoomLevel=$zoomLevel")
+                                Log.d("TodayGesture", "Touch down at ${down.position}, zoomLevel=$zoomLevel")
 
-                            do {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull() ?: break
+                                do {
+                                    val event = awaitPointerEvent()
+                                    change = event.changes.firstOrNull() ?: break
 
-                                if (change.pressed) {
-                                    val deltaY = change.position.y - change.previousPosition.y
-                                    totalDragY += deltaY
-                                }
-                            } while (change.pressed)
-
-                            Log.d("TodayGesture", "Touch up, totalDragY=$totalDragY, zoomLevel=$zoomLevel")
-
-                            // Threshold: 120px
-                            when {
-                                totalDragY < -120f -> {
-                                    Log.d("TodayGesture", "Swipe up detected")
-                                    when (zoomLevel) {
-                                        CalendarZoom.MONTH -> onZoomChange(CalendarZoom.WEEK)
-                                        CalendarZoom.WEEK -> onZoomChange(CalendarZoom.DAY)
-                                        else -> {}
+                                    if (change.pressed) {
+                                        val deltaY = change.position.y - change.previousPosition.y
+                                        totalDragY += deltaY
                                     }
-                                }
-                                totalDragY > 120f -> {
-                                    Log.d("TodayGesture", "Swipe down detected")
-                                    when (zoomLevel) {
-                                        CalendarZoom.DAY -> onZoomChange(CalendarZoom.WEEK)
-                                        CalendarZoom.WEEK -> onZoomChange(CalendarZoom.MONTH)
-                                        else -> {}
+                                } while (change.pressed)
+
+                                Log.d("TodayGesture", "Touch up, totalDragY=$totalDragY, zoomLevel=$zoomLevel")
+
+                                // Threshold: 120px
+                                when {
+                                    totalDragY < -120f -> {
+                                        Log.d("TodayGesture", "Swipe up detected")
+                                        when (zoomLevel) {
+                                            CalendarZoom.MONTH -> onZoomChange(CalendarZoom.WEEK)
+                                            CalendarZoom.WEEK -> onZoomChange(CalendarZoom.DAY)
+                                            else -> {}
+                                        }
+                                    }
+                                    totalDragY > 120f -> {
+                                        Log.d("TodayGesture", "Swipe down detected")
+                                        when (zoomLevel) {
+                                            CalendarZoom.DAY -> onZoomChange(CalendarZoom.WEEK)
+                                            CalendarZoom.WEEK -> onZoomChange(CalendarZoom.MONTH)
+                                            else -> {}
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-            ) {
-                // Header (Today / Date Title)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Header (Today / Date Title)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                     val titleText = when (zoomLevel) {
                         CalendarZoom.DAY -> {
                             if (selectedDate == LocalDate.now()) {
@@ -674,132 +681,158 @@ fun TodayContent(
                     }
                 }
 
-                Column(
-                    modifier = Modifier.fillMaxSize()
+                // Week/Month Overview (collapsible at top)
+                AnimatedVisibility(
+                    visible = zoomLevel == CalendarZoom.WEEK || zoomLevel == CalendarZoom.MONTH,
+                    enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+                    exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeOut()
                 ) {
-                    // Week/Month Overview (collapsible at top)
-                    AnimatedVisibility(
-                        visible = zoomLevel == CalendarZoom.WEEK || zoomLevel == CalendarZoom.MONTH,
-                        enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
-                        exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeOut()
-                    ) {
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            when (zoomLevel) {
+                                CalendarZoom.WEEK -> {
+                                    WeekOverviewGrid(
+                                        weekStart = selectedDate.minusDays(selectedDate.dayOfWeek.value.toLong() % 7),
+                                        itemsByDay = uiState.weekDensity,
+                                        onDaySelected = { onDateSelected(it); onZoomChange(CalendarZoom.DAY) },
+                                        accentColor = accentColor
+                                    )
+                                }
+                                CalendarZoom.MONTH -> {
+                                    MonthViewHeatmap(
+                                        currentMonth = YearMonth.from(selectedDate),
+                                        itemsByDay = uiState.monthDensity,
+                                        onDaySelected = { onDateSelected(it); onZoomChange(CalendarZoom.DAY) },
+                                        accentColor = accentColor
+                                    )
+                                }
+                                else -> {}
+                            }
+                        }
+                    }
+                }
+            }  // End of Header + Week Overview Column with swipe gesture
+
+            // Day View (swipe up only - for closing views)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(zoomLevel) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var totalDragY = 0f
+                            var change = down
+
+                            do {
+                                val event = awaitPointerEvent()
+                                change = event.changes.firstOrNull() ?: break
+
+                                if (change.pressed) {
+                                    val deltaY = change.position.y - change.previousPosition.y
+                                    totalDragY += deltaY
+                                }
+                            } while (change.pressed)
+
+                            // Only handle swipe UP (negative totalDragY)
+                            if (totalDragY < -120f) {
+                                Log.d("TodayGesture", "Swipe up detected in Day View")
                                 when (zoomLevel) {
-                                    CalendarZoom.WEEK -> {
-                                        WeekOverviewGrid(
-                                            weekStart = selectedDate.minusDays(selectedDate.dayOfWeek.value.toLong() % 7),
-                                            itemsByDay = uiState.weekDensity,
-                                            onDaySelected = { onDateSelected(it); onZoomChange(CalendarZoom.DAY) },
-                                            accentColor = accentColor
-                                        )
-                                    }
-                                    CalendarZoom.MONTH -> {
-                                        MonthViewHeatmap(
-                                            currentMonth = YearMonth.from(selectedDate),
-                                            itemsByDay = uiState.monthDensity,
-                                            onDaySelected = { onDateSelected(it); onZoomChange(CalendarZoom.DAY) },
-                                            accentColor = accentColor
-                                        )
-                                    }
+                                    CalendarZoom.MONTH -> onZoomChange(CalendarZoom.WEEK)
+                                    CalendarZoom.WEEK -> onZoomChange(CalendarZoom.DAY)
                                     else -> {}
                                 }
                             }
                         }
                     }
-
-                    // Day View
-                    Column(
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        // Only show date selector when in DAY mode
-                        AnimatedVisibility(
-                            visible = zoomLevel == CalendarZoom.DAY,
-                            enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
-                            exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeOut()
-                        ) {
-                            HorizontalDateSelector(selectedDate, onDateSelected, accentColor)
+            ) {
+                // Only show date selector when in DAY mode
+                AnimatedVisibility(
+                    visible = zoomLevel == CalendarZoom.DAY,
+                    enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+                    exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeOut()
+                ) {
+                    HorizontalDateSelector(selectedDate, onDateSelected, accentColor)
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 120.dp)
+                ) {
+                    item {
+                        Box(modifier = Modifier.padding(horizontal = 24.dp)) {
+                            SystemStateBubble(uiState.mode, uiState.systemMessageTitle, uiState.systemMessageBody)
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 120.dp)
-                        ) {
-                            item {
-                                Box(modifier = Modifier.padding(horizontal = 24.dp)) {
-                                    SystemStateBubble(uiState.mode, uiState.systemMessageTitle, uiState.systemMessageBody)
-                                }
-                                Spacer(modifier = Modifier.height(32.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
+                    }
+                    items(uiState.planItems, key = { it.id }) { item ->
+                        // Show adjusted time for snoozed items
+                        val timeStr = when {
+                            item.status == "SNOOZED" && item.snoozeUntil != null -> {
+                                Instant.ofEpochMilli(item.snoozeUntil)
+                                    .atZone(ZoneId.systemDefault())
+                                    .format(DateTimeFormatter.ofPattern("HH:mm"))
                             }
-                            items(uiState.planItems, key = { it.id }) { item ->
-                                // Show adjusted time for snoozed items
-                                val timeStr = when {
-                                    item.status == "SNOOZED" && item.snoozeUntil != null -> {
-                                        Instant.ofEpochMilli(item.snoozeUntil)
+                            item.startTimeMillis != null -> {
+                                Instant.ofEpochMilli(item.startTimeMillis)
+                                    .atZone(ZoneId.systemDefault())
+                                    .format(DateTimeFormatter.ofPattern("HH:mm"))
+                            }
+                            else -> item.window.name.lowercase().take(3).capitalize()
+                        }
+
+                        val isPast = remember(item, selectedDate) {
+                            val nowLocalDate = LocalDate.now()
+                            val currentTimeMillis = System.currentTimeMillis()
+
+                            when {
+                                selectedDate.isBefore(nowLocalDate) -> true
+                                selectedDate.isAfter(nowLocalDate) -> false
+                                else -> {
+                                    val result = item.endTimeMillis != null && currentTimeMillis > item.endTimeMillis
+
+                                    // Debug logging for timezone issue diagnosis
+                                    if (item.startTimeMillis != null && item.endTimeMillis != null) {
+                                        val startTime = Instant.ofEpochMilli(item.startTimeMillis)
                                             .atZone(ZoneId.systemDefault())
-                                            .format(DateTimeFormatter.ofPattern("HH:mm"))
-                                    }
-                                    item.startTimeMillis != null -> {
-                                        Instant.ofEpochMilli(item.startTimeMillis)
+                                            .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+                                        val endTime = Instant.ofEpochMilli(item.endTimeMillis)
                                             .atZone(ZoneId.systemDefault())
-                                            .format(DateTimeFormatter.ofPattern("HH:mm"))
+                                            .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+                                        val now = Instant.ofEpochMilli(currentTimeMillis)
+                                            .atZone(ZoneId.systemDefault())
+                                            .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+
+                                        android.util.Log.d("TodayScreen",
+                                            "isPast check: ${item.title} | start=$startTime, end=$endTime, now=$now | " +
+                                            "currentMillis=$currentTimeMillis, endMillis=${item.endTimeMillis} | " +
+                                            "isPast=$result (now > end = ${currentTimeMillis > item.endTimeMillis})")
                                     }
-                                    else -> item.window.name.lowercase().take(3).capitalize()
-                                }
-
-                                val isPast = remember(item, selectedDate) {
-                                    val nowLocalDate = LocalDate.now()
-                                    val currentTimeMillis = System.currentTimeMillis()
-
-                                    when {
-                                        selectedDate.isBefore(nowLocalDate) -> true
-                                        selectedDate.isAfter(nowLocalDate) -> false
-                                        else -> {
-                                            val result = item.endTimeMillis != null && currentTimeMillis > item.endTimeMillis
-
-                                            // Debug logging for timezone issue diagnosis
-                                            if (item.startTimeMillis != null && item.endTimeMillis != null) {
-                                                val startTime = Instant.ofEpochMilli(item.startTimeMillis)
-                                                    .atZone(ZoneId.systemDefault())
-                                                    .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
-                                                val endTime = Instant.ofEpochMilli(item.endTimeMillis)
-                                                    .atZone(ZoneId.systemDefault())
-                                                    .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
-                                                val now = Instant.ofEpochMilli(currentTimeMillis)
-                                                    .atZone(ZoneId.systemDefault())
-                                                    .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
-
-                                                android.util.Log.d("TodayScreen",
-                                                    "isPast check: ${item.title} | start=$startTime, end=$endTime, now=$now | " +
-                                                    "currentMillis=$currentTimeMillis, endMillis=${item.endTimeMillis} | " +
-                                                    "isPast=$result (now > end = ${currentTimeMillis > item.endTimeMillis})")
-                                            }
-                                            result
-                                        }
-                                    }
-                                }
-
-                                TimelineNode(time = timeStr, isPast = isPast, accentColor = accentColor) {
-                                    SwipeablePlanItem(
-                                        item = item,
-                                        onCheckedChange = onPlanItemChecked,
-                                        onLongPress = onPlanItemLongPress,
-                                        onSnooze = onPlanItemSnooze,
-                                        onSkip = onPlanItemSkip,
-                                        accentColor = accentColor
-                                    )
+                                    result
                                 }
                             }
+                        }
+
+                        TimelineNode(time = timeStr, isPast = isPast, accentColor = accentColor) {
+                            SwipeablePlanItem(
+                                item = item,
+                                onCheckedChange = onPlanItemChecked,
+                                onLongPress = onPlanItemLongPress,
+                                onSnooze = onPlanItemSnooze,
+                                onSkip = onPlanItemSkip,
+                                accentColor = accentColor
+                            )
                         }
                     }
                 }
             }
-        }
-    }
-}
+        }  // End of outer Column
+    }  // End of GlassBackground
+}  // End of Scaffold lambda
+}  // End of TodayContent function
+
 
 @Composable
 fun HorizontalDateSelector(selectedDate: LocalDate, onDateSelected: (LocalDate) -> Unit, accentColor: Color) {
@@ -1406,3 +1439,4 @@ fun SystemStateBubble(mode: Mode, title: String, body: String) {
         }
     }
 }
+

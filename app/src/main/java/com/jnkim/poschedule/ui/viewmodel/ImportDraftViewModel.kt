@@ -13,6 +13,7 @@ import com.jnkim.poschedule.data.repo.SettingsRepository
 import com.jnkim.poschedule.data.share.SharePayload
 import com.jnkim.poschedule.domain.ai.LLMTaskNormalizerUseCase
 import com.jnkim.poschedule.domain.engine.RecurrenceEngine
+import com.jnkim.poschedule.workers.NotificationScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
@@ -64,7 +65,8 @@ class ImportDraftViewModel @Inject constructor(
     private val planRepository: PlanRepository,
     private val settingsRepository: SettingsRepository,
     private val recurrenceEngine: RecurrenceEngine,
-    private val genAiRepository: GenAiRepository
+    private val genAiRepository: GenAiRepository,
+    private val notificationScheduler: NotificationScheduler
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ImportDraftUiState>(ImportDraftUiState.Idle)
@@ -536,6 +538,12 @@ class ImportDraftViewModel @Inject constructor(
                         android.util.Log.d("ImportDraftVM", "Created alternative recurring plan: ${altPlan.title}")
                     }
                 }
+
+                // Trigger notification scheduling for today's items
+                val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                val todayItems = planRepository.getPlanItems(today).first()
+                notificationScheduler.scheduleNextWindowNotification(todayItems)
+                android.util.Log.d("ImportDraftVM", "Triggered notification scheduling for ${todayItems.size} items")
 
                 // Success handled by caller (onSuccess callback)
             } catch (e: Exception) {

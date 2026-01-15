@@ -56,7 +56,8 @@ class TodayViewModel @Inject constructor(
     private val recurrenceEngine: RecurrenceEngine,
     private val notificationLogDao: com.jnkim.poschedule.data.local.dao.NotificationLogDao,
     private val llmTaskNormalizerUseCase: com.jnkim.poschedule.domain.ai.LLMTaskNormalizerUseCase,
-    private val workManager: WorkManager
+    private val workManager: WorkManager,
+    private val notificationScheduler: com.jnkim.poschedule.workers.NotificationScheduler
 ) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE))
@@ -469,6 +470,12 @@ class TodayViewModel @Inject constructor(
 
                     android.util.Log.d("TodayViewModel", "Created recurring plan series: ${normalizedPlan.title} (${normalizedPlan.recurrence.kind})")
                 }
+
+                // Trigger notification scheduling for today's items
+                val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                val todayItems = planRepository.getPlanItems(today).first()
+                notificationScheduler.scheduleNextWindowNotification(todayItems)
+                android.util.Log.d("TodayViewModel", "Triggered notification scheduling for ${todayItems.size} items")
 
                 // Reset state
                 _llmNormalizerState.value = LLMNormalizerState.Idle

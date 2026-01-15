@@ -203,13 +203,10 @@ class GenAiRepository @Inject constructor(
         systemPrompt: String,
         files: List<GenAiFile>
     ): String? {
-        android.util.Log.d("GenAiRepository", "Using Gemini API")
+        val settings = settingsRepository.settingsFlow.first()
+        android.util.Log.d("GenAiRepository", "Using Gemini API with model: ${settings.geminiModel}")
 
-        if (files.isNotEmpty()) {
-            android.util.Log.w("GenAiRepository", "Gemini vision support not implemented, ignoring ${files.size} files")
-        }
-
-        return geminiClient.getCompletion(prompt, systemPrompt, files)
+        return geminiClient.getCompletion(prompt, systemPrompt, files, settings.geminiModel)
     }
 
     /**
