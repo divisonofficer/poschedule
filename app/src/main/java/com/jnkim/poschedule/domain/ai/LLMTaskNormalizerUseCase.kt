@@ -3,6 +3,8 @@ package com.jnkim.poschedule.domain.ai
 import android.util.Log
 import com.jnkim.poschedule.data.ai.GenAiClient
 import com.jnkim.poschedule.data.ai.LLMTaskResponse
+import com.jnkim.poschedule.data.local.dao.LlmResponseDao
+import com.jnkim.poschedule.data.local.entity.LlmResponseEntity
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -14,7 +16,8 @@ import javax.inject.Singleton
 @Singleton
 class LLMTaskNormalizerUseCase @Inject constructor(
     private val genAiClient: GenAiClient,
-    private val promptManager: PromptManager
+    private val promptManager: PromptManager,
+    private val llmResponseDao: LlmResponseDao
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -29,15 +32,25 @@ class LLMTaskNormalizerUseCase @Inject constructor(
         userInput: String,
         locale: String = "ko"
     ): Result<LLMTaskResponse> {
-        return try {
-            val systemPrompt = promptManager.getLLMTaskNormalizerPrompt(locale)
-            val rawResponse = genAiClient.normalizeTaskInput(
+        val startTime = System.currentTimeMillis()
+        val systemPrompt = promptManager.getLLMTaskNormalizerPrompt(locale)
+
+        // Fetch response outside try-catch so we can always log it
+        val rawResponse = try {
+            genAiClient.normalizeTaskInput(
                 userInput = userInput,
                 systemPrompt = systemPrompt
             )
+        } catch (e: Exception) {
+            Log.e(TAG, "LLM API call failed", e)
+            return Result.failure(e)
+        }
 
-            Log.d(TAG, "LLM raw response: $rawResponse")
+        val responseTime = System.currentTimeMillis() - startTime
+        Log.d(TAG, "LLM raw response: $rawResponse")
 
+        return try {
+            // Attempt to parse
             val response = json.decodeFromString<LLMTaskResponse>(rawResponse)
 
             // Client-side validation
@@ -45,9 +58,48 @@ class LLMTaskNormalizerUseCase @Inject constructor(
 
             Log.d(TAG, "Normalized plan: intent=${validated.intent}, confidence=${validated.confidence}")
 
+            // Log successful parse
+            try {
+                llmResponseDao.insert(
+                    LlmResponseEntity(
+                        requestedAt = startTime,
+                        userPrompt = userInput,
+                        systemPrompt = systemPrompt,
+                        modelName = "a3/claude",
+                        rawResponse = rawResponse,
+                        parseSuccess = true,
+                        errorMessage = null,
+                        responseTimeMs = responseTime
+                    )
+                )
+            } catch (insertError: Exception) {
+                Log.e(TAG, "Failed to log LLM response", insertError)
+                // Don't fail the original request if logging fails
+            }
+
             Result.success(validated)
         } catch (e: Exception) {
-            Log.e(TAG, "LLM normalization failed", e)
+            Log.e(TAG, "LLM parsing failed", e)
+
+            // Log failed parse
+            try {
+                llmResponseDao.insert(
+                    LlmResponseEntity(
+                        requestedAt = startTime,
+                        userPrompt = userInput,
+                        systemPrompt = systemPrompt,
+                        modelName = "a3/claude",
+                        rawResponse = rawResponse,
+                        parseSuccess = false,
+                        errorMessage = e.message ?: e.toString(),
+                        responseTimeMs = responseTime
+                    )
+                )
+            } catch (insertError: Exception) {
+                Log.e(TAG, "Failed to log LLM response", insertError)
+                // Don't fail the original request if logging fails
+            }
+
             Result.failure(e)
         }
     }

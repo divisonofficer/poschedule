@@ -415,6 +415,7 @@ class TodayViewModel @Inject constructor(
                     title = normalizedPlan.title,
                     type = planType,
                     routineType = routineType,
+                    iconEmoji = normalizedPlan.iconEmoji, // LLM-generated emoji icon
                     isCore = false, // LLM-created plans default to non-core
                     anchor = anchor,
                     startOffsetMin = startOffset,
@@ -441,6 +442,96 @@ class TodayViewModel @Inject constructor(
                 _llmNormalizerState.value = LLMNormalizerState.Error(
                     "Failed to save plan: ${e.message}"
                 )
+            }
+        }
+    }
+
+    /**
+     * Saves an alternative plan using the main plan's time and recurrence settings.
+     * AlternativePlan only has title, planType, routineType, and iconEmoji.
+     */
+    fun confirmAlternativePlan(
+        alternative: com.jnkim.poschedule.data.ai.AlternativePlan,
+        mainPlan: com.jnkim.poschedule.data.ai.NormalizedPlan
+    ) {
+        viewModelScope.launch {
+            try {
+                // Map to existing entity structure
+                val anchor = when (mainPlan.time.anchor.uppercase()) {
+                    "WAKE" -> TimeAnchor.WAKE
+                    "BED" -> TimeAnchor.BED
+                    "FIXED" -> TimeAnchor.FIXED
+                    else -> TimeAnchor.FIXED
+                }
+
+                val planType = try {
+                    PlanType.valueOf(alternative.planType.uppercase())
+                } catch (e: Exception) {
+                    PlanType.TASK
+                }
+
+                val routineType = alternative.routineType?.let {
+                    try {
+                        com.jnkim.poschedule.domain.model.RoutineType.valueOf(it.uppercase())
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+
+                val frequency = when (mainPlan.recurrence.kind.uppercase()) {
+                    "DAILY" -> RecurrenceFrequency.DAILY
+                    "WEEKLY" -> RecurrenceFrequency.WEEKLY
+                    "WEEKDAYS" -> RecurrenceFrequency.WEEKLY
+                    "MONTHLY" -> RecurrenceFrequency.MONTHLY
+                    else -> RecurrenceFrequency.DAILY
+                }
+
+                val byDays = when {
+                    mainPlan.recurrence.kind.uppercase() == "WEEKDAYS" -> "1,2,3,4,5"
+                    mainPlan.recurrence.weekdays != null ->
+                        mainPlan.recurrence.weekdays.joinToString(",")
+                    else -> null
+                }
+
+                // Use main plan's time settings
+                val startOffset = when (anchor) {
+                    TimeAnchor.FIXED -> {
+                        val hour = mainPlan.time.fixedHour ?: 9
+                        val minute = mainPlan.time.fixedMinute ?: 0
+                        hour * 60 + minute
+                    }
+                    else -> mainPlan.time.offset ?: 0
+                }
+
+                // Use default duration for alternatives (15 minutes)
+                val endOffset = startOffset + 15
+
+                // Create plan series entity
+                val series = PlanSeriesEntity(
+                    id = UUID.randomUUID().toString(),
+                    title = alternative.title,
+                    type = planType,
+                    routineType = routineType,
+                    iconEmoji = alternative.iconEmoji, // LLM-generated emoji
+                    isCore = false,
+                    anchor = anchor,
+                    startOffsetMin = startOffset,
+                    endOffsetMin = endOffset,
+                    frequency = frequency,
+                    interval = 1,
+                    byDays = byDays,
+                    isActive = true,
+                    archived = false
+                )
+
+                // Add series to database
+                planRepository.addSeries(series)
+
+                // Expand for current week
+                expandSeriesForCurrentWeek(series)
+
+            } catch (e: Exception) {
+                android.util.Log.e("TodayViewModel", "Failed to save alternative plan: ${e.message}", e)
             }
         }
     }

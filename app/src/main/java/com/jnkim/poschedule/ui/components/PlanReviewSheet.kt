@@ -4,27 +4,33 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.jnkim.poschedule.R
+import com.jnkim.poschedule.data.ai.AlternativePlan
 import com.jnkim.poschedule.data.ai.NormalizedPlan
 
 /**
  * Review sheet for LLM-normalized plan.
  * Shows parsed plan details with confidence warning if needed.
+ * Allows selecting additional alternatives to save together.
  */
 @Composable
 fun PlanReviewSheet(
     normalizedPlan: NormalizedPlan,
     confidence: Double,
-    onConfirm: () -> Unit,
+    alternatives: List<AlternativePlan> = emptyList(),
+    onConfirm: (List<AlternativePlan>) -> Unit,
     onEdit: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Track which alternatives are selected (all selected by default)
+    var selectedAlternatives by remember { mutableStateOf(alternatives.toSet()) }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -43,8 +49,40 @@ fun PlanReviewSheet(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Display parsed plan details
+        // Display main plan details
+        Text(
+            text = "Main Task:",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(4.dp))
         PlanDetailCard(normalizedPlan)
+
+        // Display alternatives if any
+        if (alternatives.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Additional Tasks (select to add):",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            alternatives.forEach { alt ->
+                AlternativeCheckbox(
+                    alternative = alt,
+                    isSelected = selectedAlternatives.contains(alt),
+                    onToggle = {
+                        selectedAlternatives = if (selectedAlternatives.contains(alt)) {
+                            selectedAlternatives - alt
+                        } else {
+                            selectedAlternatives + alt
+                        }
+                    }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -65,8 +103,9 @@ fun PlanReviewSheet(
                     Text(stringResource(R.string.action_edit_manually))
                 }
 
-                Button(onClick = onConfirm) {
-                    Text(stringResource(R.string.action_confirm_save))
+                Button(onClick = { onConfirm(selectedAlternatives.toList()) }) {
+                    val totalTasks = 1 + selectedAlternatives.size
+                    Text(stringResource(R.string.action_confirm_save) + " ($totalTasks)")
                 }
             }
         }
@@ -124,11 +163,22 @@ private fun PlanDetailCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Title
-            Text(
-                text = plan.title,
-                style = MaterialTheme.typography.titleLarge
-            )
+            // Title with emoji
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (!plan.iconEmoji.isNullOrBlank()) {
+                    Text(
+                        text = plan.iconEmoji,
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                }
+                Text(
+                    text = plan.title,
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
 
             // Plan type and importance
             Row(
@@ -168,6 +218,73 @@ private fun PlanDetailCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Checkbox row for alternative task selection.
+ */
+@Composable
+private fun AlternativeCheckbox(
+    alternative: AlternativePlan,
+    isSelected: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggle() }
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Emoji if available
+            if (!alternative.iconEmoji.isNullOrBlank()) {
+                Text(
+                    text = alternative.iconEmoji,
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = alternative.title,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = alternative.planType,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (alternative.routineType != null) {
+                        Text(
+                            text = "• ${alternative.routineType}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
     }

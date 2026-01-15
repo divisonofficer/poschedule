@@ -89,6 +89,7 @@ class RecurrenceEngine @Inject constructor(
             date = dateStr, // CRITICAL: Always use the input date, never derive from timestamp
             title = series.title,
             type = series.routineType,
+            iconEmoji = series.iconEmoji, // Inherit LLM-generated emoji from series
             source = PlanItemSource.DETERMINISTIC,
             window = mapToLegacyWindow(series.anchor),
             status = "PENDING",

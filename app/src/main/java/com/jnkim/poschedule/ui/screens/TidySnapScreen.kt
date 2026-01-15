@@ -33,7 +33,10 @@ import com.jnkim.poschedule.R
 import com.jnkim.poschedule.data.local.entity.PlanItemWindow
 import com.jnkim.poschedule.domain.ai.MicroChore
 import com.jnkim.poschedule.ui.components.GlassBackground
+import com.jnkim.poschedule.ui.components.GlassButton
+import com.jnkim.poschedule.ui.components.GlassButtonStyle
 import com.jnkim.poschedule.ui.components.GlassCard
+import com.jnkim.poschedule.ui.components.GlassChip
 import com.jnkim.poschedule.ui.theme.ModeNormal
 import com.jnkim.poschedule.ui.viewmodel.TidySnapUiState
 import com.jnkim.poschedule.ui.viewmodel.TidySnapViewModel
@@ -111,15 +114,19 @@ fun TidySnapScreen(
                             .padding(bottom = 64.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Button(
-                            onClick = { 
+                        Surface(
+                            onClick = {
                                 takePhoto(context, imageCapture, cameraExecutor) { file ->
                                     viewModel.processImage(file, "ko")
                                 }
                             },
                             modifier = Modifier.size(80.dp),
                             shape = androidx.compose.foundation.shape.CircleShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+                            color = Color.White.copy(alpha = 0.9f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = 3.dp,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                            )
                         ) { }
                     }
                 }
@@ -234,28 +241,29 @@ fun TidySnapResultOverlay(
                     }
                 }
 
-                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
                 Text(stringResource(R.string.label_when_add), style = MaterialTheme.typography.titleSmall)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     PlanItemWindow.values().forEach { window ->
-                        FilterChip(
-                            selected = selectedWindow == window,
+                        GlassChip(
+                            text = window.name.lowercase().replaceFirstChar { it.uppercase() },
+                            isSelected = selectedWindow == window,
                             onClick = { selectedWindow = window },
-                            label = { Text(window.name.lowercase().capitalize()) }
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
 
-                Button(
+                GlassButton(
+                    text = stringResource(R.string.action_add_task),
                     onClick = { onConfirm(selectedWindow) },
+                    style = GlassButtonStyle.PRIMARY,
                     modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.action_add_task))
-                }
+                )
             }
         }
     }

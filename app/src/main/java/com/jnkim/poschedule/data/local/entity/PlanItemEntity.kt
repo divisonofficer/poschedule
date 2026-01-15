@@ -24,6 +24,7 @@ data class PlanItemEntity(
     val date: String, // yyyy-MM-dd
     val title: String,
     val type: RoutineType?,
+    val iconEmoji: String? = null, // LLM-generated emoji icon (overrides RoutineType default)
     val source: PlanItemSource,
     val window: PlanItemWindow,
     val status: String, // PENDING, DONE, SNOOZED, SKIPPED

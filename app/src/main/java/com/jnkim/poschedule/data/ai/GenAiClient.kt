@@ -111,8 +111,16 @@ class GenAiClient @Inject constructor(
      * Calls the real Multi-modal pipeline to decompose a physical chore image.
      */
     suspend fun analyzeChoreImage(imageFile: File, lang: String = "en"): List<MicroChore> {
+        android.util.Log.d("TidySnap", "Starting image analysis for file: ${imageFile.name}, lang: $lang")
+
         // 1. Upload image to get server-side file metadata
-        val genAiFile = genAiRepository.uploadFile(imageFile) ?: return emptyList()
+        val genAiFile = genAiRepository.uploadFile(imageFile)
+        if (genAiFile == null) {
+            android.util.Log.e("TidySnap", "Failed to upload image to server")
+            return emptyList()
+        }
+
+        android.util.Log.d("TidySnap", "Image uploaded successfully: ${genAiFile.url}")
 
         // 2. Prepare Multi-modal Prompt
         val systemPrompt = promptManager.getTidySnapSystemPrompt(lang)
@@ -125,9 +133,36 @@ class GenAiClient @Inject constructor(
             files = listOf(genAiFile)
         )
 
+        android.util.Log.d("TidySnap", "Raw API response: $rawResponse")
+
+        if (rawResponse == null) {
+            android.util.Log.e("TidySnap", "API returned null response")
+            return emptyList()
+        }
+
+        // 4. Clean up the response (remove markdown code blocks and HTML comments)
+        var cleanedResponse = rawResponse.trim()
+
+        // Remove markdown code fences (```json...``` or ```...```)
+        val jsonPattern = Regex("""```(?:json)?\s*(.*?)\s*```""", RegexOption.DOT_MATCHES_ALL)
+        val jsonMatch = jsonPattern.find(cleanedResponse)
+        if (jsonMatch != null) {
+            cleanedResponse = jsonMatch.groupValues[1].trim()
+        }
+
+        // Remove HTML comments (<!-- ... -->)
+        cleanedResponse = cleanedResponse.replace(Regex("""<!--.*?-->""", RegexOption.DOT_MATCHES_ALL), "").trim()
+
+        android.util.Log.d("TidySnap", "Cleaned response: $cleanedResponse")
+
+        // 5. Parse JSON
         return try {
-            json.decodeFromString<List<MicroChore>>(rawResponse ?: "[]")
+            val tasks = json.decodeFromString<List<MicroChore>>(cleanedResponse)
+            android.util.Log.d("TidySnap", "Successfully parsed ${tasks.size} micro-chores")
+            tasks
         } catch (e: Exception) {
+            android.util.Log.e("TidySnap", "Failed to parse JSON response: ${e.message}", e)
+            android.util.Log.e("TidySnap", "Problematic JSON was: $cleanedResponse")
             emptyList()
         }
     }

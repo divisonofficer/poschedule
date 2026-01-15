@@ -93,64 +93,88 @@ class GenAiRepository @Inject constructor(
             files = files
         )
 
-        return try {
-            val fullUrl = "$baseUrl/agent/api/a3/claude?site_name=${settings.siteName}"
-            android.util.Log.d("GenAiRepository", "=== API REQUEST DEBUG ===")
-            android.util.Log.d("GenAiRepository", "Full URL: $fullUrl")
-            android.util.Log.d("GenAiRepository", "Headers:")
-            android.util.Log.d("GenAiRepository", "  X-API-Key: ${apiKey.take(20)}...")
-            android.util.Log.d("GenAiRepository", "  Origin: https://genai.postech.ac.kr")
-            android.util.Log.d("GenAiRepository", "  Referer: https://genai.postech.ac.kr/")
-            android.util.Log.d("GenAiRepository", "  User-Agent: Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36...")
-            android.util.Log.d("GenAiRepository", "Body:")
-            android.util.Log.d("GenAiRepository", "  message length: ${combinedMessage.length} chars")
-            android.util.Log.d("GenAiRepository", "  stream: false")
-            android.util.Log.d("GenAiRepository", "  files: ${request.files.size} files")
-            android.util.Log.d("GenAiRepository", "========================")
+        // Retry up to 3 times for timeout/network errors
+        var lastException: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                val fullUrl = "$baseUrl/agent/api/a3/claude?site_name=${settings.siteName}"
+                android.util.Log.d("GenAiRepository", "=== API REQUEST DEBUG (Attempt ${attempt + 1}/3) ===")
+                android.util.Log.d("GenAiRepository", "Full URL: $fullUrl")
+                android.util.Log.d("GenAiRepository", "Headers:")
+                android.util.Log.d("GenAiRepository", "  X-API-Key: ${apiKey.take(20)}...")
+                android.util.Log.d("GenAiRepository", "  Origin: https://genai.postech.ac.kr")
+                android.util.Log.d("GenAiRepository", "  Referer: https://genai.postech.ac.kr/")
+                android.util.Log.d("GenAiRepository", "  User-Agent: Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36...")
+                android.util.Log.d("GenAiRepository", "Body:")
+                android.util.Log.d("GenAiRepository", "  message length: ${combinedMessage.length} chars")
+                android.util.Log.d("GenAiRepository", "  stream: false")
+                android.util.Log.d("GenAiRepository", "  files: ${request.files.size} files")
+                android.util.Log.d("GenAiRepository", "========================")
 
-            val response = api.getCompletion(
-                model = "a3/claude",  // Using Claude model
-                siteName = settings.siteName,
-                apiKey = apiKey,
-                request = request
-            )
-            val content = response.replies
-            android.util.Log.d("GenAiRepository", "API response received: ${content.take(100)}")
-            content
-        } catch (e: retrofit2.HttpException) {
-            if (e.code() == 401) {
-                // 401 error - API key might be invalid, try to refresh it
-                android.util.Log.w("GenAiRepository", "Got 401 error. Attempting to refresh API key...")
-                val newApiKey = fetchAndCacheApiKey()
+                val response = api.getCompletion(
+                    model = "a3/claude",  // Using Claude model
+                    siteName = settings.siteName,
+                    apiKey = apiKey,
+                    request = request
+                )
+                val content = response.replies
+                android.util.Log.d("GenAiRepository", "API response received: ${content.take(100)}")
+                return content
+            } catch (e: retrofit2.HttpException) {
+                if (e.code() == 401) {
+                    // 401 error - API key might be invalid, try to refresh it
+                    android.util.Log.w("GenAiRepository", "Got 401 error. Attempting to refresh API key...")
+                    val newApiKey = fetchAndCacheApiKey()
 
-                if (newApiKey != null && newApiKey != apiKey) {
-                    // Retry with new API key
-                    android.util.Log.d("GenAiRepository", "Retrying with refreshed API key...")
-                    try {
-                        val response = api.getCompletion(
-                            model = "a3/claude",
-                            siteName = settings.siteName,
-                            apiKey = newApiKey,
-                            request = request
-                        )
-                        android.util.Log.d("GenAiRepository", "Retry successful!")
-                        return response.replies
-                    } catch (retryException: Exception) {
-                        android.util.Log.e("GenAiRepository", "Retry also failed: ${retryException.message}", retryException)
-                        null
+                    if (newApiKey != null && newApiKey != apiKey) {
+                        // Retry with new API key
+                        android.util.Log.d("GenAiRepository", "Retrying with refreshed API key...")
+                        try {
+                            val response = api.getCompletion(
+                                model = "a3/claude",
+                                siteName = settings.siteName,
+                                apiKey = newApiKey,
+                                request = request
+                            )
+                            android.util.Log.d("GenAiRepository", "Retry successful!")
+                            return response.replies
+                        } catch (retryException: Exception) {
+                            android.util.Log.e("GenAiRepository", "Retry also failed: ${retryException.message}", retryException)
+                            return null
+                        }
+                    } else {
+                        android.util.Log.e("GenAiRepository", "Failed to refresh API key or got same key")
+                        return null
                     }
                 } else {
-                    android.util.Log.e("GenAiRepository", "Failed to refresh API key or got same key")
-                    null
+                    android.util.Log.e("GenAiRepository", "API call failed with HTTP ${e.code()}: ${e.message()}", e)
+                    return null
                 }
-            } else {
-                android.util.Log.e("GenAiRepository", "API call failed with HTTP ${e.code()}: ${e.message()}", e)
-                null
+            } catch (e: java.net.SocketTimeoutException) {
+                lastException = e
+                android.util.Log.w("GenAiRepository", "Timeout on attempt ${attempt + 1}/3: ${e.message}")
+                if (attempt < 2) {
+                    android.util.Log.d("GenAiRepository", "Waiting 2 seconds before retry...")
+                    kotlinx.coroutines.delay(2000) // Wait 2 seconds before retry
+                }
+            } catch (e: java.io.IOException) {
+                lastException = e
+                android.util.Log.w("GenAiRepository", "Network error on attempt ${attempt + 1}/3: ${e.message}")
+                if (attempt < 2) {
+                    android.util.Log.d("GenAiRepository", "Waiting 2 seconds before retry...")
+                    kotlinx.coroutines.delay(2000) // Wait 2 seconds before retry
+                }
+            } catch (e: Exception) {
+                lastException = e
+                android.util.Log.e("GenAiRepository", "API call failed on attempt ${attempt + 1}/3: ${e.message}", e)
+                // For other exceptions, don't retry
+                return null
             }
-        } catch (e: Exception) {
-            android.util.Log.e("GenAiRepository", "API call failed: ${e.message}", e)
-            null
         }
+
+        // All retries exhausted
+        android.util.Log.e("GenAiRepository", "All 3 attempts failed. Last error: ${lastException?.message}", lastException)
+        return null
     }
 
     /**

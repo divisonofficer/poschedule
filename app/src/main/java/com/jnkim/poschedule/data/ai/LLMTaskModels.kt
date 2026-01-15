@@ -14,7 +14,7 @@ data class LLMTaskResponse(
     val plan: NormalizedPlan? = null,
     val confidence: Double,  // 0.0 to 1.0
     val clarifications: List<String> = emptyList(),
-    val alternatives: List<NormalizedPlan> = emptyList()
+    val alternatives: List<AlternativePlan> = emptyList()
 )
 
 /**
@@ -56,4 +56,16 @@ data class RecurrenceSpec(
     val kind: String,  // NONE, DAILY, WEEKLY, MONTHLY, WEEKDAYS
     val weekdays: List<Int>? = null,  // 1=Mon, 7=Sun (if WEEKLY)
     val monthDay: Int? = null  // 1-31 (if MONTHLY)
+)
+
+/**
+ * Alternative plan suggestion from LLM.
+ * Provides simplified alternatives when the main plan has low confidence or ambiguity.
+ */
+@Serializable
+data class AlternativePlan(
+    val title: String,
+    val planType: String,  // ROUTINE, TASK, CHORE, MEETING
+    val routineType: String? = null,  // MEDS_AM, MEAL, etc. (if ROUTINE)
+    val iconEmoji: String? = null  // LLM-generated emoji icon
 )

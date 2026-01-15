@@ -204,12 +204,11 @@ fun TodayScreen(
 
     // LLM Input Flow
     if (showLLMInput) {
-        ModalBottomSheet(
+        GlassBottomSheet(
             onDismissRequest = {
                 showLLMInput = false
                 viewModel.resetLLMState()
-            },
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+            }
         ) {
             when (llmState) {
                 is LLMNormalizerState.Idle -> {
@@ -237,8 +236,16 @@ fun TodayScreen(
                         PlanReviewSheet(
                             normalizedPlan = plan,
                             confidence = response.confidence,
-                            onConfirm = {
+                            alternatives = response.alternatives,
+                            onConfirm = { selectedAlternatives ->
+                                // Save main plan
                                 viewModel.confirmLLMPlanAndSave(plan)
+
+                                // Save selected alternatives
+                                selectedAlternatives.forEach { alt ->
+                                    viewModel.confirmAlternativePlan(alt, plan)
+                                }
+
                                 showLLMInput = false
                             },
                             onEdit = {
@@ -339,10 +346,11 @@ fun TodayContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 androidx.compose.material3.Surface(
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    shadowElevation = 4.dp,
-                                    modifier = Modifier.padding(end = 8.dp)
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(DesignTokens.Radius.md),
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = DesignTokens.Alpha.glassDefault),
+                                    tonalElevation = DesignTokens.Layer.surfaceElevation,
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = DesignTokens.Alpha.borderDefault))
                                 ) {
                                     Text(
                                         text = "Natural Language",
@@ -357,7 +365,8 @@ fun TodayContent(
                                     },
                                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    shape = CircleShape
+                                    shape = CircleShape,
+                                    elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
                                 ) {
                                     Icon(Icons.Default.ChatBubble, contentDescription = "Natural Language")
                                 }
@@ -369,10 +378,11 @@ fun TodayContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 androidx.compose.material3.Surface(
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    shadowElevation = 4.dp,
-                                    modifier = Modifier.padding(end = 8.dp)
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(DesignTokens.Radius.md),
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = DesignTokens.Alpha.glassDefault),
+                                    tonalElevation = DesignTokens.Layer.surfaceElevation,
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = DesignTokens.Alpha.borderDefault))
                                 ) {
                                     Text(
                                         text = "Classic Form",
@@ -387,7 +397,8 @@ fun TodayContent(
                                     },
                                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    shape = CircleShape
+                                    shape = CircleShape,
+                                    elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
                                 ) {
                                     Icon(Icons.Default.Edit, contentDescription = "Classic Form")
                                 }
@@ -399,10 +410,11 @@ fun TodayContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 androidx.compose.material3.Surface(
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    shadowElevation = 4.dp,
-                                    modifier = Modifier.padding(end = 8.dp)
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(DesignTokens.Radius.md),
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = DesignTokens.Alpha.glassDefault),
+                                    tonalElevation = DesignTokens.Layer.surfaceElevation,
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = DesignTokens.Alpha.borderDefault))
                                 ) {
                                     Text(
                                         text = "Tidy Camera",
@@ -417,7 +429,8 @@ fun TodayContent(
                                     },
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    shape = CircleShape
+                                    shape = CircleShape,
+                                    elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
                                 ) {
                                     Icon(Icons.Default.CameraAlt, contentDescription = stringResource(R.string.title_tidy_snap))
                                 }
@@ -430,7 +443,13 @@ fun TodayContent(
                         onClick = { viewModel.toggleFabMenu() },
                         containerColor = accentColor.copy(alpha = 0.8f),
                         contentColor = MaterialTheme.colorScheme.onSurface,
-                        shape = CircleShape
+                        shape = CircleShape,
+                        elevation = FloatingActionButtonDefaults.elevation(
+                            defaultElevation = 0.dp,
+                            pressedElevation = 0.dp,
+                            focusedElevation = 0.dp,
+                            hoveredElevation = 0.dp
+                        )
                     ) {
                         androidx.compose.animation.AnimatedContent(
                             targetState = fabMenuExpanded,
@@ -744,9 +763,8 @@ fun PlanEditorSheet(
         initialSelectedDateMillis = selectedDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
     )
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface
+    GlassBottomSheet(
+        onDismissRequest = onDismiss
     ) {
         LazyColumn(
             modifier = Modifier
@@ -765,31 +783,22 @@ fun PlanEditorSheet(
 
             // Event Type Toggle
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = isRecurring,
-                        onClick = { isRecurring = true },
-                        label = { Text("Recurring") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = !isRecurring,
-                        onClick = { isRecurring = false },
-                        label = { Text("One-time") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                GlassSegmentedControl(
+                    options = listOf("Recurring", "One-time"),
+                    selectedIndex = if (isRecurring) 0 else 1,
+                    onSelectionChange = { index ->
+                        isRecurring = (index == 0)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             // Title
             item {
-                OutlinedTextField(
+                GlassTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text(stringResource(R.string.label_what_is_it)) },
+                    label = stringResource(R.string.label_what_is_it),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -799,12 +808,12 @@ fun PlanEditorSheet(
             if (!isRecurring) {
                 item {
                     Text("Date", style = MaterialTheme.typography.titleMedium)
-                    OutlinedCard(
-                        onClick = { showDatePicker = true },
-                        modifier = Modifier.fillMaxWidth()
+                    GlassCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showDatePicker = true }
                     ) {
                         Row(
-                            modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Default.CalendarToday, contentDescription = null)
@@ -821,12 +830,12 @@ fun PlanEditorSheet(
             // Time Selection
             item {
                 Text("Time", style = MaterialTheme.typography.titleMedium)
-                OutlinedCard(
-                    onClick = { showTimePicker = true },
-                    modifier = Modifier.fillMaxWidth()
+                GlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showTimePicker = true }
                 ) {
                     Row(
-                        modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(Icons.Default.AccessTime, contentDescription = null)
@@ -843,18 +852,14 @@ fun PlanEditorSheet(
             if (isRecurring) {
                 item {
                     Text(stringResource(R.string.label_anchor), style = MaterialTheme.typography.titleMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TimeAnchor.values().forEach { a ->
-                            FilterChip(
-                                selected = anchor == a,
-                                onClick = { anchor = a },
-                                label = { Text(a.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                            )
-                        }
-                    }
+                    GlassSegmentedControl(
+                        options = TimeAnchor.values().map { it.name.lowercase().replaceFirstChar { it.uppercase() } },
+                        selectedIndex = TimeAnchor.values().indexOf(anchor),
+                        onSelectionChange = { index ->
+                            anchor = TimeAnchor.values()[index]
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     // Descriptive text for selected anchor
                     Spacer(Modifier.height(4.dp))
@@ -879,10 +884,10 @@ fun PlanEditorSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         PlanType.values().forEach { type ->
-                            FilterChip(
-                                selected = planType == type,
-                                onClick = { planType = type },
-                                label = { Text(type.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                            GlassChip(
+                                text = type.name.lowercase().replaceFirstChar { it.uppercase() },
+                                isSelected = planType == type,
+                                onClick = { planType = type }
                             )
                         }
                     }
@@ -893,49 +898,31 @@ fun PlanEditorSheet(
             if (isRecurring) {
                 item {
                     Text(stringResource(R.string.label_frequency), style = MaterialTheme.typography.titleMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        RecurrenceFrequency.values().forEach { f ->
-                            FilterChip(
-                                selected = frequency == f,
-                                onClick = { frequency = f },
-                                label = { Text(f.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                            )
-                        }
-                    }
+                    GlassSegmentedControl(
+                        options = RecurrenceFrequency.values().map { it.name.lowercase().replaceFirstChar { it.uppercase() } },
+                        selectedIndex = RecurrenceFrequency.values().indexOf(frequency),
+                        onSelectionChange = { index ->
+                            frequency = RecurrenceFrequency.values()[index]
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
             // Weekly day picker (only for recurring weekly events)
             if (isRecurring && frequency == RecurrenceFrequency.WEEKLY) {
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        (1..7).forEach { day ->
-                            val dayChar = listOf("M", "T", "W", "T", "F", "S", "S")[day - 1]
-                            val isSelected = selectedDays.contains(day)
-                            Surface(
-                                onClick = {
-                                    selectedDays = if (isSelected) selectedDays - day else selectedDays + day
-                                },
-                                shape = CircleShape,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = dayChar,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                    DayChipRow(
+                        selectedDays = selectedDays,
+                        onDayToggle = { day ->
+                            selectedDays = if (selectedDays.contains(day)) {
+                                selectedDays - day
+                            } else {
+                                selectedDays + day
                             }
-                        }
-                    }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -944,14 +931,15 @@ fun PlanEditorSheet(
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(R.string.label_mark_core), modifier = Modifier.weight(1f))
-                        Switch(checked = isCore, onCheckedChange = { isCore = it })
+                        GlassToggle(checked = isCore, onCheckedChange = { isCore = it })
                     }
                 }
             }
 
             // Save button
             item {
-                Button(
+                GlassButton(
+                    text = stringResource(R.string.action_save_lifestyle),
                     onClick = {
                         if (isRecurring) {
                             // Calculate offset from anchor time
@@ -974,11 +962,10 @@ fun PlanEditorSheet(
                             onSaveOneTime(title, dateStr, timePickerState.hour, timePickerState.minute, durationMin)
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = title.isNotBlank()
-                ) {
-                    Text(stringResource(R.string.action_save_lifestyle))
-                }
+                    style = GlassButtonStyle.PRIMARY,
+                    enabled = title.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
@@ -1194,14 +1181,19 @@ fun PlanItemOrbCard(
     )
     val haptics = LocalHapticFeedback.current
 
-    val icon = when (item.type) {
-        RoutineType.MEDS_AM, RoutineType.MEDS_PM -> "💊"
-        RoutineType.MEAL -> "🍽"
-        RoutineType.WIND_DOWN -> "🌙"
-        RoutineType.MOVEMENT -> "🏃"
-        RoutineType.STUDY -> "📖"
-        RoutineType.CHORE -> "🧹"
-        null -> if (item.source == PlanItemSource.MANUAL) "✨" else "📝"
+    // Priority: LLM-generated emoji > RoutineType defaults > fallback
+    val icon = if (!item.iconEmoji.isNullOrBlank()) {
+        item.iconEmoji
+    } else {
+        when (item.type) {
+            RoutineType.MEDS_AM, RoutineType.MEDS_PM -> "💊"
+            RoutineType.MEAL -> "🍽"
+            RoutineType.WIND_DOWN -> "🌙"
+            RoutineType.MOVEMENT -> "🏃"
+            RoutineType.STUDY -> "📖"
+            RoutineType.CHORE -> "🧹"
+            null -> if (item.source == PlanItemSource.MANUAL) "✨" else "📝"
+        }
     }
 
     // Apply very subtle orange tint for overdue items

@@ -22,6 +22,7 @@ data class PlanSeriesEntity(
     val title: String,
     val type: PlanType,
     val routineType: RoutineType?,
+    val iconEmoji: String? = null, // LLM-generated emoji icon
     val isCore: Boolean,
     val anchor: TimeAnchor,
     val startOffsetMin: Int,

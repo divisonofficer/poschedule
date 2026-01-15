@@ -17,8 +17,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jnkim.poschedule.R
-import com.jnkim.poschedule.ui.components.GlassBackground
-import com.jnkim.poschedule.ui.components.GlassCard
+import com.jnkim.poschedule.ui.components.*
 import com.jnkim.poschedule.ui.theme.ModeNormal
 import com.jnkim.poschedule.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.delay
@@ -97,18 +96,20 @@ fun SettingsScreen(
                                 Text(stringResource(R.string.label_sso_status), style = MaterialTheme.typography.bodyLarge)
                                 Text(stringResource(R.string.label_active_session), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                             }
-                            Button(onClick = onLogout, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)) {
-                                Text(stringResource(R.string.action_logout))
-                            }
+                            GlassButton(
+                                text = stringResource(R.string.action_logout),
+                                onClick = onLogout,
+                                style = GlassButtonStyle.SECONDARY
+                            )
                         }
 
                         Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
                         settings?.let { s ->
-                            OutlinedTextField(
+                            GlassTextField(
                                 value = s.siteName,
                                 onValueChange = { viewModel.updateSiteName(it) },
-                                label = { Text(stringResource(R.string.label_site_name)) },
+                                label = stringResource(R.string.label_site_name),
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
                             )
@@ -147,7 +148,7 @@ fun SettingsScreen(
                                 Text(stringResource(R.string.label_llm_copy), style = MaterialTheme.typography.bodyLarge)
                                 Text(stringResource(R.string.desc_llm_copy), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                             }
-                            Switch(checked = s.aiEnabled, onCheckedChange = { viewModel.toggleAiEnabled(it) })
+                            GlassToggle(checked = s.aiEnabled, onCheckedChange = { viewModel.toggleAiEnabled(it) })
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(
@@ -159,7 +160,7 @@ fun SettingsScreen(
                                 Text(stringResource(R.string.label_vision_consent), style = MaterialTheme.typography.bodyLarge)
                                 Text(stringResource(R.string.desc_vision_consent), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                             }
-                            Switch(checked = s.visionConsent, onCheckedChange = { viewModel.toggleVisionConsent(it) })
+                            GlassToggle(checked = s.visionConsent, onCheckedChange = { viewModel.toggleVisionConsent(it) })
                         }
                     }
                 }
@@ -170,21 +171,17 @@ fun SettingsScreen(
                     settings?.let { s ->
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(stringResource(R.string.label_language), style = MaterialTheme.typography.bodyLarge)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                FilterChip(
-                                    selected = s.language == "en",
-                                    onClick = { viewModel.updateLanguage("en") },
-                                    label = { Text(stringResource(R.string.lang_en)) }
-                                )
-                                FilterChip(
-                                    selected = s.language == "ko",
-                                    onClick = { viewModel.updateLanguage("ko") },
-                                    label = { Text(stringResource(R.string.lang_ko)) }
-                                )
-                            }
+                            GlassSegmentedControl(
+                                options = listOf(
+                                    stringResource(R.string.lang_en),
+                                    stringResource(R.string.lang_ko)
+                                ),
+                                selectedIndex = if (s.language == "en") 0 else 1,
+                                onSelectionChange = { index ->
+                                    viewModel.updateLanguage(if (index == 0) "en" else "ko")
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -196,36 +193,36 @@ fun SettingsScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             // Theme Mode Selection
                             Text(stringResource(R.string.label_theme_mode), style = MaterialTheme.typography.bodyLarge)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                FilterChip(
-                                    selected = s.themeMode == "SYSTEM",
-                                    onClick = { viewModel.updateThemeMode("SYSTEM") },
-                                    label = { Text(stringResource(R.string.theme_system)) }
-                                )
-                                FilterChip(
-                                    selected = s.themeMode == "LIGHT",
-                                    onClick = { viewModel.updateThemeMode("LIGHT") },
-                                    label = { Text(stringResource(R.string.theme_light)) }
-                                )
-                                FilterChip(
-                                    selected = s.themeMode == "DARK",
-                                    onClick = { viewModel.updateThemeMode("DARK") },
-                                    label = { Text(stringResource(R.string.theme_dark)) }
-                                )
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                FilterChip(
-                                    selected = s.themeMode == "TIME_ADAPTIVE",
-                                    onClick = { viewModel.updateThemeMode("TIME_ADAPTIVE") },
-                                    label = { Text(stringResource(R.string.theme_time_adaptive)) }
-                                )
-                            }
+                            GlassSegmentedControl(
+                                options = listOf(
+                                    stringResource(R.string.theme_system),
+                                    stringResource(R.string.theme_light),
+                                    stringResource(R.string.theme_dark)
+                                ),
+                                selectedIndex = when (s.themeMode) {
+                                    "SYSTEM" -> 0
+                                    "LIGHT" -> 1
+                                    "DARK" -> 2
+                                    else -> -1
+                                },
+                                onSelectionChange = { index ->
+                                    val mode = when (index) {
+                                        0 -> "SYSTEM"
+                                        1 -> "LIGHT"
+                                        2 -> "DARK"
+                                        else -> "SYSTEM"
+                                    }
+                                    viewModel.updateThemeMode(mode)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            GlassChip(
+                                text = stringResource(R.string.theme_time_adaptive),
+                                isSelected = s.themeMode == "TIME_ADAPTIVE",
+                                onClick = { viewModel.updateThemeMode("TIME_ADAPTIVE") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
                             // Weather Effects Toggle (only shown in TIME_ADAPTIVE mode)
                             if (s.themeMode == "TIME_ADAPTIVE") {
@@ -244,7 +241,7 @@ fun SettingsScreen(
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                         )
                                     }
-                                    Switch(
+                                    GlassToggle(
                                         checked = s.weatherEffectsEnabled,
                                         onCheckedChange = { viewModel.updateWeatherEffectsEnabled(it) }
                                     )
@@ -255,31 +252,32 @@ fun SettingsScreen(
                                     Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
 
                                     Text(stringResource(R.string.label_current_weather), style = MaterialTheme.typography.bodyLarge)
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        FilterChip(
-                                            selected = s.manualWeatherState == "CLEAR",
-                                            onClick = { viewModel.updateManualWeatherState("CLEAR") },
-                                            label = { Text(stringResource(R.string.weather_clear)) }
-                                        )
-                                        FilterChip(
-                                            selected = s.manualWeatherState == "CLOUDY",
-                                            onClick = { viewModel.updateManualWeatherState("CLOUDY") },
-                                            label = { Text(stringResource(R.string.weather_cloudy)) }
-                                        )
-                                        FilterChip(
-                                            selected = s.manualWeatherState == "RAIN",
-                                            onClick = { viewModel.updateManualWeatherState("RAIN") },
-                                            label = { Text(stringResource(R.string.weather_rain)) }
-                                        )
-                                        FilterChip(
-                                            selected = s.manualWeatherState == "SNOW",
-                                            onClick = { viewModel.updateManualWeatherState("SNOW") },
-                                            label = { Text(stringResource(R.string.weather_snow)) }
-                                        )
-                                    }
+                                    GlassSegmentedControl(
+                                        options = listOf(
+                                            stringResource(R.string.weather_clear),
+                                            stringResource(R.string.weather_cloudy),
+                                            stringResource(R.string.weather_rain),
+                                            stringResource(R.string.weather_snow)
+                                        ),
+                                        selectedIndex = when (s.manualWeatherState) {
+                                            "CLEAR" -> 0
+                                            "CLOUDY" -> 1
+                                            "RAIN" -> 2
+                                            "SNOW" -> 3
+                                            else -> 0
+                                        },
+                                        onSelectionChange = { index ->
+                                            val state = when (index) {
+                                                0 -> "CLEAR"
+                                                1 -> "CLOUDY"
+                                                2 -> "RAIN"
+                                                3 -> "SNOW"
+                                                else -> "CLEAR"
+                                            }
+                                            viewModel.updateManualWeatherState(state)
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
                             }
                         }
@@ -291,15 +289,12 @@ fun SettingsScreen(
                 GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Life OS Replay Harness", style = MaterialTheme.typography.bodyLarge)
-                        Button(
+                        GlassButton(
+                            text = "🐛 Simulate Missed Core (RECOVERY)",
                             onClick = { viewModel.simulateRecoveryScenario() },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-                        ) {
-                            Icon(Icons.Default.BugReport, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Simulate Missed Core (RECOVERY)")
-                        }
+                            style = GlassButtonStyle.SECONDARY
+                        )
                         Text("Injects failure scenario to test adaptive mode transitions.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
                 }

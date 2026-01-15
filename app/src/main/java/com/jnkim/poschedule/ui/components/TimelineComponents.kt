@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jnkim.poschedule.ui.theme.innerGlow
 
 @Composable
 fun TimelineNode(
@@ -51,12 +52,18 @@ fun TimelineNode(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxHeight()
         ) {
+            // Timeline orb with inner glow for non-past items
             Box(
                 modifier = Modifier
                     .size(12.dp)
                     .clip(CircleShape)
                     .background(if (isPast) accentColor.copy(alpha = 0.4f) else accentColor)
+                    .then(
+                        // Add inner glow only for non-past items
+                        if (!isPast) Modifier.innerGlow(glowRadius = 6.dp) else Modifier
+                    )
             )
+            // Vertical connecting line
             Box(
                 modifier = Modifier
                     .width(2.dp)
