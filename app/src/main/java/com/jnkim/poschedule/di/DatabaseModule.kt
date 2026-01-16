@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.jnkim.poschedule.data.local.dao.LlmResponseDao
 import com.jnkim.poschedule.data.local.dao.NotificationLogDao
 import com.jnkim.poschedule.data.local.dao.PlanDao
+import com.jnkim.poschedule.data.local.dao.PlanRichDataDao
 import com.jnkim.poschedule.data.local.dao.RoutineDao
 import com.jnkim.poschedule.data.local.db.AppDatabase
 import dagger.Module
@@ -123,6 +124,108 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * Migration from v9 to v10:
+     * - Phase 1: Rich Plan Detail View
+     * - Adds 9 nullable calendar-grade fields to plan_items table
+     * - Supports meeting URLs, locations, contacts, and source evidence
+     * - All fields nullable for backward compatibility
+     */
+    private val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Meeting/Call fields
+            database.execSQL("ALTER TABLE plan_items ADD COLUMN joinUrl TEXT")
+            database.execSQL("ALTER TABLE plan_items ADD COLUMN webUrl TEXT")
+
+            // Location fields
+            database.execSQL("ALTER TABLE plan_items ADD COLUMN locationText TEXT")
+            database.execSQL("ALTER TABLE plan_items ADD COLUMN mapQuery TEXT")
+
+            // Deep link / App fields
+            database.execSQL("ALTER TABLE plan_items ADD COLUMN deepLinkUrl TEXT")
+            database.execSQL("ALTER TABLE plan_items ADD COLUMN packageName TEXT")
+
+            // Contact fields
+            database.execSQL("ALTER TABLE plan_items ADD COLUMN contactName TEXT")
+            database.execSQL("ALTER TABLE plan_items ADD COLUMN contactEmail TEXT")
+
+            // Source evidence
+            database.execSQL("ALTER TABLE plan_items ADD COLUMN sourceSnippet TEXT")
+        }
+    }
+
+    /**
+     * Migration from v10 to v11:
+     * - Phase 1.5: Scalable Rich Data Architecture
+     * - Creates separate normalized tables for rich plan metadata
+     * - Deprecates v10 fields in plan_items (kept for backward compatibility)
+     * - Enables unlimited extensibility for future rich data types
+     *
+     * New tables:
+     * - plan_meetings: Meeting URLs with auto-detected type (Zoom/Teams/Webex/Meet)
+     * - plan_locations: Location data with GPS coordinates
+     * - plan_contacts: Contact information (1:N - multiple contacts per plan)
+     * - plan_notes: User notes, tags, color codes, and AI source evidence
+     */
+    private val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            // Create plan_meetings table (1:1 with plan_items)
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS plan_meetings (
+                    planId TEXT PRIMARY KEY NOT NULL,
+                    joinUrl TEXT NOT NULL,
+                    meetingType TEXT NOT NULL,
+                    webUrl TEXT,
+                    meetingId TEXT,
+                    FOREIGN KEY(planId) REFERENCES plan_items(id) ON DELETE CASCADE
+                )
+            """)
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_plan_meetings_planId ON plan_meetings(planId)")
+
+            // Create plan_locations table (1:1 with plan_items)
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS plan_locations (
+                    planId TEXT PRIMARY KEY NOT NULL,
+                    locationText TEXT NOT NULL,
+                    mapQuery TEXT,
+                    address TEXT,
+                    latitude REAL,
+                    longitude REAL,
+                    FOREIGN KEY(planId) REFERENCES plan_items(id) ON DELETE CASCADE
+                )
+            """)
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_plan_locations_planId ON plan_locations(planId)")
+
+            // Create plan_contacts table (1:N with plan_items)
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS plan_contacts (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    planId TEXT NOT NULL,
+                    name TEXT,
+                    email TEXT,
+                    phoneNumber TEXT,
+                    role TEXT,
+                    avatarUrl TEXT,
+                    FOREIGN KEY(planId) REFERENCES plan_items(id) ON DELETE CASCADE
+                )
+            """)
+            database.execSQL("CREATE INDEX IF NOT EXISTS index_plan_contacts_planId ON plan_contacts(planId)")
+
+            // Create plan_notes table (1:1 with plan_items)
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS plan_notes (
+                    planId TEXT PRIMARY KEY NOT NULL,
+                    notes TEXT,
+                    tags TEXT,
+                    sourceSnippet TEXT,
+                    colorTag TEXT,
+                    FOREIGN KEY(planId) REFERENCES plan_items(id) ON DELETE CASCADE
+                )
+            """)
+            database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_plan_notes_planId ON plan_notes(planId)")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -131,7 +234,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             "poschedule_db"
         )
-        .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+        .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
         .fallbackToDestructiveMigration() // Keep as fallback for dev
         .build()
     }
@@ -154,5 +257,10 @@ object DatabaseModule {
     @Provides
     fun provideLlmResponseDao(database: AppDatabase): LlmResponseDao {
         return database.llmResponseDao()
+    }
+
+    @Provides
+    fun providePlanRichDataDao(database: AppDatabase): PlanRichDataDao {
+        return database.planRichDataDao()
     }
 }

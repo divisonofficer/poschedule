@@ -34,6 +34,17 @@ data class OCRTextBlock(
     val isSelected: Boolean = false  // Default: not selected (user selects center blocks)
 )
 
+/**
+ * Selection mode for OCR text blocks.
+ *
+ * - TOGGLE: All blocks start selected. Tap to toggle individual blocks on/off.
+ * - CROP: All blocks start unselected. Drag to draw rectangle, select blocks within.
+ */
+enum class SelectionMode {
+    TOGGLE,  // Mode 1: Toggle individual blocks (default: all selected)
+    CROP     // Mode 2: Drag rectangle to select area (default: none selected)
+}
+
 sealed class ImportDraftUiState {
     object Idle : ImportDraftUiState()
     data class Preview(val payload: SharePayload) : ImportDraftUiState()
@@ -43,7 +54,8 @@ sealed class ImportDraftUiState {
         val imageUri: android.net.Uri,
         val imageBitmap: android.graphics.Bitmap,  // For displaying with overlay
         val selectedDate: java.time.LocalDate = java.time.LocalDate.now(),  // Default to today
-        val selectedTime: java.time.LocalTime? = null  // Null = let LLM decide
+        val selectedTime: java.time.LocalTime? = null,  // Null = let LLM decide
+        val selectionMode: SelectionMode = SelectionMode.CROP  // Default mode: CROP (more intuitive)
     ) : ImportDraftUiState()
     object Analyzing : ImportDraftUiState()  // LLM analysis in progress (text only)
     data class AnalyzingWithDebug(  // LLM analysis with OCR debug view visible
@@ -72,6 +84,9 @@ class ImportDraftViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<ImportDraftUiState>(ImportDraftUiState.Idle)
     val uiState: StateFlow<ImportDraftUiState> = _uiState.asStateFlow()
 
+    // Track screenshot URI for potential deletion (Android 11+ only)
+    private var screenshotUri: Uri? = null
+
     /**
      * Analyzes shared content.
      * For text: directly analyze with LLM
@@ -90,6 +105,15 @@ class ImportDraftViewModel @Inject constructor(
                     is SharePayload.SharedImage -> {
                         // Image: perform MLKit OCR first
                         _uiState.value = ImportDraftUiState.PerformingOCR
+
+                        // Detect if this is a screenshot (Android 11+ only)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                            if (isScreenshotUri(payload.uri)) {
+                                screenshotUri = payload.uri
+                                android.util.Log.d("ImportDraftVM", "Detected screenshot URI: $screenshotUri")
+                            }
+                        }
+
                         val (textBlocks, bitmap) = performMLKitOCR(payload.uri)
 
                         if (textBlocks.isEmpty()) {
@@ -97,11 +121,16 @@ class ImportDraftViewModel @Inject constructor(
                                 "이미지에서 텍스트를 찾을 수 없습니다"
                             )
                         } else {
+                            // Default mode: CROP (no blocks selected initially)
+                            // User drags to select area
+                            val initialBlocks = textBlocks.map { it.copy(isSelected = false) }
+
                             // Show OCR results to user with text block overlay
                             _uiState.value = ImportDraftUiState.OCRComplete(
-                                textBlocks = textBlocks,
+                                textBlocks = initialBlocks,
                                 imageUri = payload.uri,
                                 imageBitmap = bitmap
+                                // selectionMode defaults to CROP in data class
                             )
                         }
                     }
@@ -146,6 +175,62 @@ class ImportDraftViewModel @Inject constructor(
                 // Check if block center is within Y range
                 if (blockCenterY >= minY && blockCenterY <= maxY) {
                     block.copy(isSelected = select)
+                } else {
+                    block  // Keep existing state
+                }
+            }
+            _uiState.value = currentState.copy(textBlocks = updatedBlocks)
+        }
+    }
+
+    /**
+     * Switches selection mode and resets all blocks to mode-appropriate initial state.
+     *
+     * - TOGGLE mode: All blocks selected (user taps to deselect unwanted)
+     * - CROP mode: All blocks unselected (user drags to select wanted area)
+     */
+    fun switchSelectionMode(mode: SelectionMode) {
+        val currentState = _uiState.value
+        if (currentState is ImportDraftUiState.OCRComplete) {
+            val defaultSelected = when (mode) {
+                SelectionMode.TOGGLE -> true   // TOGGLE: start with all selected
+                SelectionMode.CROP -> false    // CROP: start with none selected
+            }
+
+            val resetBlocks = currentState.textBlocks.map { block ->
+                block.copy(isSelected = defaultSelected)
+            }
+
+            _uiState.value = currentState.copy(
+                textBlocks = resetBlocks,
+                selectionMode = mode
+            )
+        }
+    }
+
+    /**
+     * Selects all text blocks within a rectangular region.
+     * Used for CROP mode drag gesture.
+     *
+     * @param left Left edge in bitmap space
+     * @param top Top edge in bitmap space
+     * @param right Right edge in bitmap space
+     * @param bottom Bottom edge in bitmap space
+     */
+    fun selectBlocksInRectangle(left: Float, top: Float, right: Float, bottom: Float) {
+        val currentState = _uiState.value
+        if (currentState is ImportDraftUiState.OCRComplete) {
+            val updatedBlocks = currentState.textBlocks.map { block ->
+                val rect = block.boundingBox
+                val blockCenterX = rect.centerX()
+                val blockCenterY = rect.centerY()
+
+                // Check if block center is within rectangle
+                val isInside = blockCenterX >= left && blockCenterX <= right &&
+                               blockCenterY >= top && blockCenterY <= bottom
+
+                if (isInside) {
+                    block.copy(isSelected = true)
                 } else {
                     block  // Keep existing state
                 }
@@ -342,44 +427,18 @@ class ImportDraftViewModel @Inject constructor(
                                 OCRTextBlock(
                                     text = text,
                                     boundingBox = boundingBox,
-                                    isSelected = false  // Start with all unselected
+                                    isSelected = false  // Initial state (will be set by mode)
                                 )
                             )
                         }
 
-                        // Auto-select center blocks only
-                        val imageCenterX = bitmap.width / 2f
-                        val imageCenterY = bitmap.height / 2f
+                        android.util.Log.d("ImportDraftVM", "MLKit OCR extracted ${allBlocks.size} text blocks")
 
-                        // Calculate distance from center for each block
-                        val blocksWithDistance = allBlocks.map { block ->
-                            val blockCenterX = block.boundingBox.centerX()
-                            val blockCenterY = block.boundingBox.centerY()
-                            val distance = kotlin.math.sqrt(
-                                (blockCenterX - imageCenterX) * (blockCenterX - imageCenterX) +
-                                (blockCenterY - imageCenterY) * (blockCenterY - imageCenterY)
-                            )
-                            block to distance
-                        }
+                        // Merge small boxes that are near each other
+                        val mergedBlocks = mergeNearbySmallBoxes(allBlocks)
+                        android.util.Log.d("ImportDraftVM", "After merging: ${mergedBlocks.size} text blocks")
 
-                        // Select blocks in center 60% region or top 3-5 closest blocks
-                        val maxSelectCount = kotlin.math.min(5, allBlocks.size)
-                        val selectedIndices = blocksWithDistance
-                            .sortedBy { it.second }  // Sort by distance from center
-                            .take(maxSelectCount)
-                            .map { allBlocks.indexOf(it.first) }
-                            .toSet()
-
-                        val textBlocks = allBlocks.mapIndexed { index, block ->
-                            if (index in selectedIndices) {
-                                block.copy(isSelected = true)
-                            } else {
-                                block
-                            }
-                        }
-
-                        android.util.Log.d("ImportDraftVM", "MLKit OCR extracted ${textBlocks.size} blocks, ${selectedIndices.size} auto-selected")
-                        continuation.resumeWith(Result.success(Pair(textBlocks, bitmap)))
+                        continuation.resumeWith(Result.success(Pair(mergedBlocks, bitmap)))
                     }
                     .addOnFailureListener { e ->
                         android.util.Log.e("ImportDraftVM", "MLKit OCR failed", e)
@@ -390,6 +449,213 @@ class ImportDraftViewModel @Inject constructor(
                 continuation.resumeWith(Result.failure(e))
             }
         }
+    }
+
+    /**
+     * Merges small text boxes that are near each other.
+     *
+     * Small boxes (< 50px width or height) are merged with nearby boxes (within 20px distance).
+     * This reduces clutter from fragmented text recognition.
+     *
+     * Algorithm:
+     * 1. Identify small boxes
+     * 2. For each small box, find the nearest neighbor within threshold
+     * 3. Merge by combining text and creating union bounding box
+     * 4. Repeat until no more merges possible
+     */
+    private fun mergeNearbySmallBoxes(blocks: List<OCRTextBlock>): List<OCRTextBlock> {
+        if (blocks.isEmpty()) return blocks
+
+        val mutableBlocks = blocks.toMutableList()
+        var merged = true
+
+        // Define thresholds
+        val smallSizeThreshold = 50  // Boxes smaller than 50px width or height
+        val nearbyDistanceThreshold = 20  // Boxes within 20px distance
+
+        // Keep merging until no more merges possible
+        while (merged) {
+            merged = false
+            var i = 0
+
+            while (i < mutableBlocks.size) {
+                val block = mutableBlocks[i]
+                val rect = block.boundingBox
+
+                // Check if this is a small box
+                val isSmall = rect.width() < smallSizeThreshold || rect.height() < smallSizeThreshold
+
+                if (isSmall) {
+                    // Find nearest neighbor within distance threshold
+                    var nearestIndex = -1
+                    var nearestDistance = Float.MAX_VALUE
+
+                    for (j in mutableBlocks.indices) {
+                        if (i == j) continue
+
+                        val otherRect = mutableBlocks[j].boundingBox
+                        val distance = calculateDistance(rect, otherRect)
+
+                        if (distance < nearbyDistanceThreshold && distance < nearestDistance) {
+                            nearestDistance = distance
+                            nearestIndex = j
+                        }
+                    }
+
+                    // Merge with nearest neighbor if found
+                    if (nearestIndex != -1) {
+                        val nearestBlock = mutableBlocks[nearestIndex]
+                        val mergedBlock = mergeBlocks(block, nearestBlock)
+
+                        // Remove both blocks and add merged block
+                        val maxIndex = kotlin.math.max(i, nearestIndex)
+                        val minIndex = kotlin.math.min(i, nearestIndex)
+
+                        mutableBlocks.removeAt(maxIndex)
+                        mutableBlocks.removeAt(minIndex)
+                        mutableBlocks.add(minIndex, mergedBlock)
+
+                        merged = true
+                        // Don't increment i, recheck from same position
+                        continue
+                    }
+                }
+
+                i++
+            }
+        }
+
+        return mutableBlocks
+    }
+
+    /**
+     * Calculates minimum distance between two rectangles.
+     * Returns 0 if they overlap.
+     */
+    private fun calculateDistance(rect1: android.graphics.Rect, rect2: android.graphics.Rect): Float {
+        // If rectangles overlap, distance is 0
+        if (rect1.intersect(rect2)) return 0f
+
+        // Calculate horizontal distance
+        val horizontalDistance = when {
+            rect1.right < rect2.left -> rect2.left - rect1.right
+            rect2.right < rect1.left -> rect1.left - rect2.right
+            else -> 0
+        }
+
+        // Calculate vertical distance
+        val verticalDistance = when {
+            rect1.bottom < rect2.top -> rect2.top - rect1.bottom
+            rect2.bottom < rect1.top -> rect1.top - rect2.bottom
+            else -> 0
+        }
+
+        // Return Euclidean distance
+        return kotlin.math.sqrt(
+            (horizontalDistance * horizontalDistance + verticalDistance * verticalDistance).toFloat()
+        )
+    }
+
+    /**
+     * Merges two text blocks by combining text and creating union bounding box.
+     */
+    private fun mergeBlocks(block1: OCRTextBlock, block2: OCRTextBlock): OCRTextBlock {
+        // Combine text with space separator
+        val combinedText = "${block1.text} ${block2.text}"
+
+        // Create union bounding box
+        val rect1 = block1.boundingBox
+        val rect2 = block2.boundingBox
+
+        val unionRect = android.graphics.Rect(
+            kotlin.math.min(rect1.left, rect2.left),
+            kotlin.math.min(rect1.top, rect2.top),
+            kotlin.math.max(rect1.right, rect2.right),
+            kotlin.math.max(rect1.bottom, rect2.bottom)
+        )
+
+        // Keep selection state (true if either was selected)
+        val isSelected = block1.isSelected || block2.isSelected
+
+        return OCRTextBlock(
+            text = combinedText,
+            boundingBox = unionRect,
+            isSelected = isSelected
+        )
+    }
+
+    /**
+     * Detects if a URI is from a screenshot.
+     * Checks if the URI is from MediaStore and contains "screenshot" in the path.
+     *
+     * Android 11+ only - older versions don't support safe screenshot deletion.
+     */
+    @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.R)
+    private fun isScreenshotUri(uri: Uri): Boolean {
+        try {
+            // Check if URI is from MediaStore
+            if (uri.scheme != "content") return false
+            if (uri.authority?.contains("media") != true) return false
+
+            // Query display name or data path
+            val projection = arrayOf(
+                android.provider.MediaStore.Images.Media.DISPLAY_NAME,
+                android.provider.MediaStore.Images.Media.DATA
+            )
+
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val displayNameIndex = cursor.getColumnIndex(android.provider.MediaStore.Images.Media.DISPLAY_NAME)
+                    val dataIndex = cursor.getColumnIndex(android.provider.MediaStore.Images.Media.DATA)
+
+                    val displayName = if (displayNameIndex >= 0) cursor.getString(displayNameIndex) else ""
+                    val dataPath = if (dataIndex >= 0) cursor.getString(dataIndex) else ""
+
+                    // Check if path contains "screenshot" or "Screenshot"
+                    val isScreenshot = displayName?.contains("screenshot", ignoreCase = true) == true ||
+                                      dataPath?.contains("screenshot", ignoreCase = true) == true
+
+                    android.util.Log.d("ImportDraftVM", "URI check: displayName=$displayName, dataPath=$dataPath, isScreenshot=$isScreenshot")
+                    return isScreenshot
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ImportDraftVM", "Error checking if URI is screenshot", e)
+        }
+
+        return false
+    }
+
+    /**
+     * Deletes a screenshot using MediaStore.createDeleteRequest().
+     *
+     * Android 11+ only - uses safe deletion that prompts user for confirmation.
+     * Returns an IntentSender that should be launched by the Activity.
+     */
+    @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.R)
+    fun createScreenshotDeletionRequest(): android.content.IntentSender? {
+        val uri = screenshotUri ?: return null
+
+        try {
+            val deleteRequest = android.provider.MediaStore.createDeleteRequest(
+                context.contentResolver,
+                listOf(uri)
+            )
+            android.util.Log.d("ImportDraftVM", "Created deletion request for screenshot: $uri")
+            return deleteRequest.intentSender
+        } catch (e: Exception) {
+            android.util.Log.e("ImportDraftVM", "Error creating deletion request", e)
+            return null
+        }
+    }
+
+    /**
+     * Checks if there's a screenshot that can be deleted.
+     * Only returns true on Android 11+ with a detected screenshot URI.
+     */
+    fun hasScreenshotToDelete(): Boolean {
+        return android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+               screenshotUri != null
     }
 
     /**

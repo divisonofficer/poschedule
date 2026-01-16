@@ -35,6 +35,7 @@ import com.jnkim.poschedule.R
 import com.jnkim.poschedule.data.share.SharePayload
 import com.jnkim.poschedule.ui.components.GlassBackground
 import com.jnkim.poschedule.ui.components.GlassCard
+import com.jnkim.poschedule.ui.components.GlassSegmentedControl
 import com.jnkim.poschedule.ui.components.PlanReviewSheet
 import com.jnkim.poschedule.ui.components.WittyLoadingIndicator
 import com.jnkim.poschedule.ui.theme.ModeNormal
@@ -60,9 +61,69 @@ fun ImportDraftScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    // Screenshot deletion dialog state
+    var showScreenshotDeletionDialog by remember { mutableStateOf(false) }
+
+    // Activity result launcher for screenshot deletion (Android 11+)
+    val deletionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        // Deletion complete (regardless of user choice)
+        android.util.Log.d("ImportDraftScreen", "Screenshot deletion result: ${result.resultCode}")
+        onSuccess()
+    }
+
     // Auto-start analysis on first composition
     LaunchedEffect(sharePayload) {
         viewModel.analyzeShareContent(sharePayload)
+    }
+
+    // Screenshot deletion dialog
+    if (showScreenshotDeletionDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showScreenshotDeletionDialog = false
+                onSuccess()
+            },
+            title = { Text("스크린샷 삭제") },
+            text = { Text("이 스크린샷을 삭제할까요?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showScreenshotDeletionDialog = false
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                            val deletionIntent = viewModel.createScreenshotDeletionRequest()
+                            if (deletionIntent != null) {
+                                try {
+                                    // Launch MediaStore deletion request
+                                    val request = androidx.activity.result.IntentSenderRequest.Builder(deletionIntent).build()
+                                    deletionLauncher.launch(request)
+                                } catch (e: Exception) {
+                                    android.util.Log.e("ImportDraftScreen", "Error launching deletion", e)
+                                    onSuccess()
+                                }
+                            } else {
+                                onSuccess()
+                            }
+                        } else {
+                            onSuccess()
+                        }
+                    }
+                ) {
+                    Text("삭제")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showScreenshotDeletionDialog = false
+                        onSuccess()
+                    }
+                ) {
+                    Text("유지")
+                }
+            }
+        )
     }
 
     GlassBackground(accentColor = ModeNormal) {
@@ -102,10 +163,15 @@ fun ImportDraftScreen(
                     OCRResultContent(
                         textBlocks = state.textBlocks,
                         imageBitmap = state.imageBitmap,
+                        selectionMode = state.selectionMode,
                         onBlockToggle = { index -> viewModel.toggleTextBlock(index) },
                         onYRangeSelect = { minY, maxY, select ->
                             viewModel.selectBlocksInYRange(minY, maxY, select)
                         },
+                        onRectangleSelect = { left, top, right, bottom ->
+                            viewModel.selectBlocksInRectangle(left, top, right, bottom)
+                        },
+                        onModeChange = { mode -> viewModel.switchSelectionMode(mode) },
                         onContinue = {
                             viewModel.continueWithLLMAnalysis(
                                 selectedBlocks = state.textBlocks,
@@ -141,7 +207,13 @@ fun ImportDraftScreen(
                                 mainPlan = modifiedPlan,
                                 alternatives = selectedAlternatives
                             )
-                            onSuccess()
+
+                            // Check if there's a screenshot to delete (Android 11+ only)
+                            if (viewModel.hasScreenshotToDelete()) {
+                                showScreenshotDeletionDialog = true
+                            } else {
+                                onSuccess()
+                            }
                         },
                         onEdit = {
                             // Phase 2: Open manual editor
@@ -256,8 +328,11 @@ private fun LoadingContent(message: String? = null) {
 private fun OCRResultContent(
     textBlocks: List<com.jnkim.poschedule.ui.viewmodel.OCRTextBlock>,
     imageBitmap: android.graphics.Bitmap,
+    selectionMode: com.jnkim.poschedule.ui.viewmodel.SelectionMode,
     onBlockToggle: (Int) -> Unit,
     onYRangeSelect: (Float, Float, Boolean) -> Unit,
+    onRectangleSelect: (Float, Float, Float, Float) -> Unit,
+    onModeChange: (com.jnkim.poschedule.ui.viewmodel.SelectionMode) -> Unit,
     onContinue: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -286,41 +361,30 @@ private fun OCRResultContent(
             )
         }
 
-        // Quick selection buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = {
-                    // Select all blocks
-                    textBlocks.forEachIndexed { index, block ->
-                        if (!block.isSelected) {
-                            onBlockToggle(index)
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("전체 선택")
-            }
-            OutlinedButton(
-                onClick = {
-                    // Deselect all blocks
-                    textBlocks.forEachIndexed { index, block ->
-                        if (block.isSelected) {
-                            onBlockToggle(index)
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("전체 해제")
-            }
-        }
+        // Selection mode toggle
+        GlassSegmentedControl(
+            options = listOf("탭 선택", "영역 선택"),
+            selectedIndex = when (selectionMode) {
+                com.jnkim.poschedule.ui.viewmodel.SelectionMode.TOGGLE -> 0
+                com.jnkim.poschedule.ui.viewmodel.SelectionMode.CROP -> 1
+            },
+            onSelectionChange = { index ->
+                val newMode = when (index) {
+                    0 -> com.jnkim.poschedule.ui.viewmodel.SelectionMode.TOGGLE
+                    1 -> com.jnkim.poschedule.ui.viewmodel.SelectionMode.CROP
+                    else -> com.jnkim.poschedule.ui.viewmodel.SelectionMode.TOGGLE
+                }
+                onModeChange(newMode)
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
 
+        // Mode description
         Text(
-            text = "박스를 터치해서 선택/해제하세요",
+            text = when (selectionMode) {
+                com.jnkim.poschedule.ui.viewmodel.SelectionMode.TOGGLE -> "박스를 터치해서 선택/해제하세요"
+                com.jnkim.poschedule.ui.viewmodel.SelectionMode.CROP -> "화면을 드래그해서 영역을 선택하세요"
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -334,8 +398,9 @@ private fun OCRResultContent(
             InteractiveOCRImage(
                 bitmap = imageBitmap,
                 textBlocks = textBlocks,
+                selectionMode = selectionMode,
                 onBlockToggle = onBlockToggle,
-                onYRangeSelect = onYRangeSelect
+                onRectangleSelect = onRectangleSelect
             )
         }
 
@@ -364,19 +429,34 @@ private fun OCRResultContent(
 /**
  * Interactive OCR image with touch-selectable text blocks.
  * Selected blocks are shown in normal brightness, unselected blocks are dimmed.
- * Supports tap to toggle individual block and vertical drag to select/deselect range.
+ *
+ * TOGGLE mode: Tap to toggle individual blocks on/off.
+ * CROP mode: Drag to draw rectangle, select blocks within.
+ *
  * Scaled to fit within parent container without scrolling.
  */
 @Composable
 private fun InteractiveOCRImage(
     bitmap: android.graphics.Bitmap,
     textBlocks: List<com.jnkim.poschedule.ui.viewmodel.OCRTextBlock>,
+    selectionMode: com.jnkim.poschedule.ui.viewmodel.SelectionMode,
     onBlockToggle: (Int) -> Unit,
-    onYRangeSelect: (Float, Float, Boolean) -> Unit
+    onRectangleSelect: (Float, Float, Float, Float) -> Unit
 ) {
-    var dragStartY by remember { mutableFloatStateOf(0f) }
-    var dragEndY by remember { mutableFloatStateOf(0f) }
+    // Crop rectangle coordinates (always visible in CROP mode)
+    var cropStartX by remember { mutableFloatStateOf(0f) }
+    var cropStartY by remember { mutableFloatStateOf(0f) }
+    var cropEndX by remember { mutableFloatStateOf(0f) }
+    var cropEndY by remember { mutableFloatStateOf(0f) }
+    var isCropInitialized by remember { mutableStateOf(false) }
     var isDragging by remember { mutableStateOf(false) }
+
+    // Reset crop initialization when mode changes
+    LaunchedEffect(selectionMode) {
+        if (selectionMode != com.jnkim.poschedule.ui.viewmodel.SelectionMode.CROP) {
+            isCropInitialized = false
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -386,86 +466,89 @@ private fun InteractiveOCRImage(
         Canvas(
             modifier = Modifier
                 .matchParentSize()
-                .pointerInput(textBlocks) {
-                    // Detect both tap and drag gestures
-                    detectTapGestures { tapOffset ->
-                        // Tap gesture - toggle individual block
-                        val canvasWidth = size.width.toFloat()
-                        val canvasHeight = size.height.toFloat()
-                        val bitmapWidth = bitmap.width.toFloat()
-                        val bitmapHeight = bitmap.height.toFloat()
+                .pointerInput(textBlocks, selectionMode) {
+                    when (selectionMode) {
+                        com.jnkim.poschedule.ui.viewmodel.SelectionMode.TOGGLE -> {
+                            // TOGGLE mode: Tap to toggle individual blocks
+                            detectTapGestures { tapOffset ->
+                                val canvasWidth = size.width.toFloat()
+                                val canvasHeight = size.height.toFloat()
+                                val bitmapWidth = bitmap.width.toFloat()
+                                val bitmapHeight = bitmap.height.toFloat()
 
-                        val scale = minOf(
-                            canvasWidth / bitmapWidth,
-                            canvasHeight / bitmapHeight
-                        )
-                        val scaledWidth = bitmapWidth * scale
-                        val scaledHeight = bitmapHeight * scale
-                        val offsetX = (canvasWidth - scaledWidth) / 2
-                        val offsetY = (canvasHeight - scaledHeight) / 2
+                                val scale = minOf(
+                                    canvasWidth / bitmapWidth,
+                                    canvasHeight / bitmapHeight
+                                )
+                                val scaledWidth = bitmapWidth * scale
+                                val scaledHeight = bitmapHeight * scale
+                                val offsetX = (canvasWidth - scaledWidth) / 2
+                                val offsetY = (canvasHeight - scaledHeight) / 2
 
-                        val bitmapX = (tapOffset.x - offsetX) / scale
-                        val bitmapY = (tapOffset.y - offsetY) / scale
+                                val bitmapX = (tapOffset.x - offsetX) / scale
+                                val bitmapY = (tapOffset.y - offsetY) / scale
 
-                        textBlocks.forEachIndexed { index, block ->
-                            val rect = block.boundingBox
-                            if (bitmapX >= rect.left && bitmapX <= rect.right &&
-                                bitmapY >= rect.top && bitmapY <= rect.bottom
-                            ) {
-                                onBlockToggle(index)
-                                return@detectTapGestures
+                                textBlocks.forEachIndexed { index, block ->
+                                    val rect = block.boundingBox
+                                    if (bitmapX >= rect.left && bitmapX <= rect.right &&
+                                        bitmapY >= rect.top && bitmapY <= rect.bottom
+                                    ) {
+                                        onBlockToggle(index)
+                                        return@detectTapGestures
+                                    }
+                                }
                             }
+                        }
+                        com.jnkim.poschedule.ui.viewmodel.SelectionMode.CROP -> {
+                            // CROP mode: Drag to adjust crop rectangle
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    isDragging = true
+                                    cropStartX = offset.x
+                                    cropStartY = offset.y
+                                    cropEndX = offset.x
+                                    cropEndY = offset.y
+                                },
+                                onDrag = { change, _ ->
+                                    cropEndX = change.position.x
+                                    cropEndY = change.position.y
+                                },
+                                onDragEnd = {
+                                    isDragging = false
+
+                                    // Convert canvas coordinates to bitmap coordinates
+                                    val canvasWidth = size.width.toFloat()
+                                    val canvasHeight = size.height.toFloat()
+                                    val bitmapWidth = bitmap.width.toFloat()
+                                    val bitmapHeight = bitmap.height.toFloat()
+
+                                    val scale = minOf(
+                                        canvasWidth / bitmapWidth,
+                                        canvasHeight / bitmapHeight
+                                    )
+                                    val scaledWidth = bitmapWidth * scale
+                                    val scaledHeight = bitmapHeight * scale
+                                    val offsetX = (canvasWidth - scaledWidth) / 2
+                                    val offsetY = (canvasHeight - scaledHeight) / 2
+
+                                    val minX = kotlin.math.min(cropStartX, cropEndX)
+                                    val maxX = kotlin.math.max(cropStartX, cropEndX)
+                                    val minY = kotlin.math.min(cropStartY, cropEndY)
+                                    val maxY = kotlin.math.max(cropStartY, cropEndY)
+
+                                    val bitmapLeft = (minX - offsetX) / scale
+                                    val bitmapRight = (maxX - offsetX) / scale
+                                    val bitmapTop = (minY - offsetY) / scale
+                                    val bitmapBottom = (maxY - offsetY) / scale
+
+                                    onRectangleSelect(bitmapLeft, bitmapTop, bitmapRight, bitmapBottom)
+                                },
+                                onDragCancel = {
+                                    isDragging = false
+                                }
+                            )
                         }
                     }
-                }
-                .pointerInput(textBlocks) {
-                    // Detect vertical drag for range selection
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            isDragging = true
-                            dragStartY = offset.y
-                            dragEndY = offset.y
-                        },
-                        onDrag = { change, _ ->
-                            dragEndY = change.position.y
-                        },
-                        onDragEnd = {
-                            isDragging = false
-
-                            // Convert canvas Y to bitmap Y coordinates
-                            val canvasWidth = size.width.toFloat()
-                            val canvasHeight = size.height.toFloat()
-                            val bitmapWidth = bitmap.width.toFloat()
-                            val bitmapHeight = bitmap.height.toFloat()
-
-                            val scale = minOf(
-                                canvasWidth / bitmapWidth,
-                                canvasHeight / bitmapHeight
-                            )
-                            val scaledHeight = bitmapHeight * scale
-                            val offsetY = (canvasHeight - scaledHeight) / 2
-
-                            val minY = kotlin.math.min(dragStartY, dragEndY)
-                            val maxY = kotlin.math.max(dragStartY, dragEndY)
-
-                            val bitmapMinY = (minY - offsetY) / scale
-                            val bitmapMaxY = (maxY - offsetY) / scale
-
-                            // Check if first block in range is selected or not
-                            // to decide whether to select or deselect all in range
-                            val firstBlockInRange = textBlocks.find { block ->
-                                val centerY = block.boundingBox.centerY()
-                                centerY >= bitmapMinY && centerY <= bitmapMaxY
-                            }
-
-                            val shouldSelect = firstBlockInRange?.isSelected == false
-
-                            onYRangeSelect(bitmapMinY, bitmapMaxY, shouldSelect)
-                        },
-                        onDragCancel = {
-                            isDragging = false
-                        }
-                    )
                 }
         ) {
             val canvasWidth = size.width
@@ -483,6 +566,23 @@ private fun InteractiveOCRImage(
             val scaledHeight = bitmapHeight * scale
             val offsetX = (canvasWidth - scaledWidth) / 2
             val offsetY = (canvasHeight - scaledHeight) / 2
+
+            // Initialize crop rectangle in CROP mode (covers 90% of image with margin)
+            if (selectionMode == com.jnkim.poschedule.ui.viewmodel.SelectionMode.CROP && !isCropInitialized) {
+                val margin = 0.05f // 5% margin on each side
+                cropStartX = offsetX + (scaledWidth * margin)
+                cropStartY = offsetY + (scaledHeight * margin)
+                cropEndX = offsetX + (scaledWidth * (1f - margin))
+                cropEndY = offsetY + (scaledHeight * (1f - margin))
+                isCropInitialized = true
+
+                // Select blocks within initial crop rectangle
+                val bitmapLeft = (cropStartX - offsetX) / scale
+                val bitmapRight = (cropEndX - offsetX) / scale
+                val bitmapTop = (cropStartY - offsetY) / scale
+                val bitmapBottom = (cropEndY - offsetY) / scale
+                onRectangleSelect(bitmapLeft, bitmapTop, bitmapRight, bitmapBottom)
+            }
 
             // Draw the bitmap
             drawImage(
@@ -523,6 +623,96 @@ private fun InteractiveOCRImage(
                         dstSize = androidx.compose.ui.unit.IntSize(dstWidth.toInt(), dstHeight.toInt())
                     )
                 }
+            }
+
+            // Draw crop rectangle in CROP mode (always visible, like image crop UI)
+            if (selectionMode == com.jnkim.poschedule.ui.viewmodel.SelectionMode.CROP) {
+                val minX = kotlin.math.min(cropStartX, cropEndX)
+                val maxX = kotlin.math.max(cropStartX, cropEndX)
+                val minY = kotlin.math.min(cropStartY, cropEndY)
+                val maxY = kotlin.math.max(cropStartY, cropEndY)
+
+                val rectWidth = maxX - minX
+                val rectHeight = maxY - minY
+
+                // Draw semi-transparent white fill for selected area
+                drawRect(
+                    color = Color.White.copy(alpha = 0.15f),
+                    topLeft = Offset(minX, minY),
+                    size = Size(rectWidth, rectHeight)
+                )
+
+                // Draw outer shadow (black border for depth)
+                drawRect(
+                    color = Color.Black.copy(alpha = 0.3f),
+                    topLeft = Offset(minX - 1.dp.toPx(), minY - 1.dp.toPx()),
+                    size = Size(rectWidth + 2.dp.toPx(), rectHeight + 2.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                )
+
+                // Draw main white border
+                drawRect(
+                    color = Color.White,
+                    topLeft = Offset(minX, minY),
+                    size = Size(rectWidth, rectHeight),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
+                )
+
+                // Draw corner handles (8x8dp squares at each corner)
+                val handleSize = 8.dp.toPx()
+                val handleOffset = 1.5.dp.toPx() // Half of border width
+
+                // Top-left handle
+                drawRect(
+                    color = Color.White,
+                    topLeft = Offset(minX - handleOffset, minY - handleOffset),
+                    size = Size(handleSize, handleSize)
+                )
+                drawRect(
+                    color = Color.Black.copy(alpha = 0.3f),
+                    topLeft = Offset(minX - handleOffset, minY - handleOffset),
+                    size = Size(handleSize, handleSize),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                )
+
+                // Top-right handle
+                drawRect(
+                    color = Color.White,
+                    topLeft = Offset(maxX - handleSize + handleOffset, minY - handleOffset),
+                    size = Size(handleSize, handleSize)
+                )
+                drawRect(
+                    color = Color.Black.copy(alpha = 0.3f),
+                    topLeft = Offset(maxX - handleSize + handleOffset, minY - handleOffset),
+                    size = Size(handleSize, handleSize),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                )
+
+                // Bottom-left handle
+                drawRect(
+                    color = Color.White,
+                    topLeft = Offset(minX - handleOffset, maxY - handleSize + handleOffset),
+                    size = Size(handleSize, handleSize)
+                )
+                drawRect(
+                    color = Color.Black.copy(alpha = 0.3f),
+                    topLeft = Offset(minX - handleOffset, maxY - handleSize + handleOffset),
+                    size = Size(handleSize, handleSize),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                )
+
+                // Bottom-right handle
+                drawRect(
+                    color = Color.White,
+                    topLeft = Offset(maxX - handleSize + handleOffset, maxY - handleSize + handleOffset),
+                    size = Size(handleSize, handleSize)
+                )
+                drawRect(
+                    color = Color.Black.copy(alpha = 0.3f),
+                    topLeft = Offset(maxX - handleSize + handleOffset, maxY - handleSize + handleOffset),
+                    size = Size(handleSize, handleSize),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                )
             }
         }
     }

@@ -14,7 +14,24 @@ interface PlanDao {
     suspend fun insertPlanDay(planDay: PlanDayEntity)
 
     // --- PlanInstance (Individual Occurrences) ---
-    @Query("SELECT * FROM plan_items WHERE date = :date ORDER BY createdAt ASC")
+    /**
+     * Get plan items sorted by effective display time:
+     * 1. SNOOZED items: sorted by snoozeUntil
+     * 2. Items with startTimeMillis: sorted by startTimeMillis
+     * 3. Others: sorted by createdAt
+     *
+     * This ensures items appear in chronological order regardless of snooze status.
+     */
+    @Query("""
+        SELECT * FROM plan_items
+        WHERE date = :date
+        ORDER BY
+            CASE
+                WHEN status = 'SNOOZED' AND snoozeUntil IS NOT NULL THEN snoozeUntil
+                WHEN startTimeMillis IS NOT NULL THEN startTimeMillis
+                ELSE createdAt
+            END ASC
+    """)
     fun getPlanItems(date: String): Flow<List<PlanItemEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

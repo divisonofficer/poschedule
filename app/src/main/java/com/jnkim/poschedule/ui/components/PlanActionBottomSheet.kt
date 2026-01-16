@@ -3,6 +3,7 @@ package com.jnkim.poschedule.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsPaused
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.SkipNext
@@ -21,6 +22,7 @@ import com.jnkim.poschedule.data.local.entity.PlanItemEntity
 fun PlanActionBottomSheet(
     item: PlanItemEntity,
     onDismiss: () -> Unit,
+    onViewDetails: (PlanItemEntity) -> Unit = {},
     onSnooze: (String) -> Unit,
     onSkip: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -85,6 +87,13 @@ fun PlanActionBottomSheet(
             )
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            // Phase 1: View Details action (rich plan data)
+            ActionRow(
+                icon = Icons.Default.Info,
+                label = "View Details",
+                onClick = { onViewDetails(item); onDismiss() }
+            )
 
             ActionRow(
                 icon = Icons.Default.NotificationsPaused,

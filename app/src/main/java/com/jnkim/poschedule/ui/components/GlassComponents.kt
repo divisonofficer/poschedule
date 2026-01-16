@@ -25,6 +25,7 @@ import com.jnkim.poschedule.ui.theme.specularHighlight
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -35,6 +36,8 @@ fun GlassCard(
     val borderColor = colorScheme.outline.copy(alpha = DesignTokens.Alpha.borderDefault)
 
     Surface(
+        onClick = onClick ?: {},
+        enabled = onClick != null,
         modifier = modifier
             .specularHighlight(cornerRadius = DesignTokens.Layer.surfaceRadius),
         color = baseColor,

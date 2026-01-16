@@ -1,8 +1,11 @@
 package com.jnkim.poschedule.ui.screens
 
 import android.app.TimePickerDialog
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -46,6 +49,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -72,6 +76,7 @@ import com.jnkim.poschedule.ui.theme.*
 import com.jnkim.poschedule.ui.viewmodel.LLMNormalizerState
 import com.jnkim.poschedule.ui.viewmodel.TodayUiState
 import com.jnkim.poschedule.ui.viewmodel.TodayViewModel
+import com.jnkim.poschedule.utils.IntentSafetyHelper
 import android.widget.Toast
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.jnkim.poschedule.workers.DailyPlanWorker
@@ -143,6 +148,7 @@ fun TodayScreen(
     var selectedDate by remember { mutableStateOf<LocalDate>(LocalDate.now()) }
     var zoomLevel by remember { mutableStateOf<CalendarZoom>(CalendarZoom.DAY) }
     var selectedItemForActions by remember { mutableStateOf<PlanItemEntity?>(null) }
+    var showDetailScreen by remember { mutableStateOf<PlanItemEntity?>(null) }
 
     var showClipboardPrompt by remember { mutableStateOf(false) }
     var clipboardText by remember { mutableStateOf("") }
@@ -227,6 +233,10 @@ fun TodayScreen(
         PlanActionBottomSheet(
             item = item,
             onDismiss = { selectedItemForActions = null },
+            onViewDetails = { planItem ->
+                showDetailScreen = planItem
+                selectedItemForActions = null
+            },
             onSnooze = { id -> viewModel.snoozeItem(id) },
             onSkip = { id -> viewModel.skipItem(id) },
             onDelete = { id ->
@@ -237,6 +247,82 @@ fun TodayScreen(
                 }
             },
             onStopSeries = { seriesId -> viewModel.stopSeries(seriesId) }
+        )
+    }
+
+    // Phase 1: Detail Screen (calendar-grade rich plan view)
+    showDetailScreen?.let { item ->
+        PlanDetailScreen(
+            planItem = item,
+            onDismiss = { showDetailScreen = null },
+            onMarkDone = {
+                viewModel.onPlanItemChecked(item.id, true)
+                showDetailScreen = null
+            },
+            onSnooze = {
+                viewModel.snoozeItem(item.id)
+                showDetailScreen = null
+            },
+            onSkip = {
+                viewModel.skipItem(item.id)
+                showDetailScreen = null
+            },
+            onDelete = {
+                if (item.seriesId != null) {
+                    viewModel.removeOccurrence(item.seriesId)
+                } else {
+                    viewModel.deletePlanItem(item.id)
+                }
+                showDetailScreen = null
+            },
+            onOpenMap = { mapQuery ->
+                val validated = IntentSafetyHelper.validateUrl(mapQuery)
+                if (validated != null) {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(validated))
+                    try {
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Could not open Maps", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onJoinMeeting = { joinUrl ->
+                val validated = IntentSafetyHelper.validateUrl(joinUrl)
+                if (validated != null) {
+                    IntentSafetyHelper.showFirstLaunchConfirmation(context, validated) {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(validated))
+                        try {
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Could not open meeting", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
+            onOpenWeb = { webUrl ->
+                val validated = IntentSafetyHelper.validateUrl(webUrl)
+                if (validated != null) {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(validated))
+                    try {
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Could not open URL", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onSendEmail = { email ->
+                val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email"))
+                try {
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Could not open email app", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onCopyText = { text ->
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Email", text))
+                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
         )
     }
 
@@ -575,7 +661,7 @@ fun TodayContent(
                         .fillMaxWidth()
                         .pointerInput(zoomLevel) {
                             awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val down = awaitFirstDown(requireUnconsumed = true)
                                 var totalDragY = 0f
                                 var change = down
 
@@ -731,7 +817,7 @@ fun TodayContent(
                     .fillMaxSize()
                     .pointerInput(zoomLevel) {
                         awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val down = awaitFirstDown(requireUnconsumed = true)
                             var totalDragY = 0f
                             var change = down
 
@@ -1387,6 +1473,43 @@ fun PlanItemOrbCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     textDecoration = if (skipped) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
                 )
+
+                // Phase 1: Rich data indicators (location, meeting, contacts)
+                val hasRichData = !item.locationText.isNullOrBlank() ||
+                                  !item.joinUrl.isNullOrBlank() ||
+                                  !item.contactName.isNullOrBlank() ||
+                                  !item.contactEmail.isNullOrBlank()
+
+                if (hasRichData) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        // Location indicator
+                        if (!item.locationText.isNullOrBlank()) {
+                            RichDataChip(
+                                icon = Icons.Default.LocationOn,
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            )
+                        }
+
+                        // Meeting indicator
+                        if (!item.joinUrl.isNullOrBlank()) {
+                            RichDataChip(
+                                icon = Icons.Default.VideoCall,
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        }
+
+                        // Contact indicator
+                        if (!item.contactName.isNullOrBlank() || !item.contactEmail.isNullOrBlank()) {
+                            RichDataChip(
+                                icon = Icons.Default.Person,
+                                color = MaterialTheme.colorScheme.tertiaryContainer
+                            )
+                        }
+                    }
+                }
             }
             // Status badges
             when {
@@ -1506,6 +1629,36 @@ fun SystemStateBubble(mode: Mode, title: String, body: String) {
                 Text(text = title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 Text(text = body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
             }
+        }
+    }
+}
+
+/**
+ * RichDataChip - Small circular indicator showing that a plan has rich data (location/meeting/contacts).
+ *
+ * Phase 1: Rich Plan Detail View
+ * Shows small icon chips below plan title when rich calendar-grade data exists.
+ */
+@Composable
+private fun RichDataChip(
+    icon: ImageVector,
+    color: Color
+) {
+    Surface(
+        color = color,
+        shape = CircleShape,
+        modifier = Modifier.size(20.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(12.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
