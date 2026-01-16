@@ -1454,16 +1454,21 @@ fun PlanItemOrbCard(
     }
 
     GlassCard(
-        modifier = cardModifier
-            .combinedClickable(
-                onClick = { onCheckedChange(item.id, !completed) },
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress(item)
-                }
-            )
+        modifier = cardModifier,
+        onClick = {
+            android.util.Log.d("TodayScreen", "Plan item clicked: ${item.id}")
+            onCheckedChange(item.id, !completed)
+        },
+        onLongClick = {
+            android.util.Log.d("TodayScreen", "Plan item long clicked: ${item.id}")
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            onLongPress(item)
+        }
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(text = icon, style = MaterialTheme.typography.headlineSmall)
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {

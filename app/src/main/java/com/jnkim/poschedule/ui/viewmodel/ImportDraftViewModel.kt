@@ -107,11 +107,16 @@ class ImportDraftViewModel @Inject constructor(
                         _uiState.value = ImportDraftUiState.PerformingOCR
 
                         // Detect if this is a screenshot (Android 11+ only)
+                        android.util.Log.d("ImportDraftVM", "Processing image URI: ${payload.uri}, SDK: ${android.os.Build.VERSION.SDK_INT}")
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                            if (isScreenshotUri(payload.uri)) {
+                            val isScreenshot = isScreenshotUri(payload.uri)
+                            android.util.Log.d("ImportDraftVM", "Screenshot check result: $isScreenshot")
+                            if (isScreenshot) {
                                 screenshotUri = payload.uri
                                 android.util.Log.d("ImportDraftVM", "Detected screenshot URI: $screenshotUri")
                             }
+                        } else {
+                            android.util.Log.d("ImportDraftVM", "Android version < R, screenshot deletion not supported")
                         }
 
                         val (textBlocks, bitmap) = performMLKitOCR(payload.uri)
@@ -229,11 +234,8 @@ class ImportDraftViewModel @Inject constructor(
                 val isInside = blockCenterX >= left && blockCenterX <= right &&
                                blockCenterY >= top && blockCenterY <= bottom
 
-                if (isInside) {
-                    block.copy(isSelected = true)
-                } else {
-                    block  // Keep existing state
-                }
+                // Always update selection state - deselect blocks outside rectangle
+                block.copy(isSelected = isInside)
             }
             _uiState.value = currentState.copy(textBlocks = updatedBlocks)
         }

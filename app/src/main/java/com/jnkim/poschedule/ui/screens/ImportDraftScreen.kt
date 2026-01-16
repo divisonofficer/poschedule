@@ -209,9 +209,13 @@ fun ImportDraftScreen(
                             )
 
                             // Check if there's a screenshot to delete (Android 11+ only)
-                            if (viewModel.hasScreenshotToDelete()) {
+                            val hasScreenshot = viewModel.hasScreenshotToDelete()
+                            android.util.Log.d("ImportDraftScreen", "Has screenshot to delete: $hasScreenshot")
+                            if (hasScreenshot) {
+                                android.util.Log.d("ImportDraftScreen", "Showing screenshot deletion dialog")
                                 showScreenshotDeletionDialog = true
                             } else {
+                                android.util.Log.d("ImportDraftScreen", "No screenshot, calling onSuccess()")
                                 onSuccess()
                             }
                         },
@@ -510,6 +514,7 @@ private fun InteractiveOCRImage(
                                     cropEndY = offset.y
                                 },
                                 onDrag = { change, _ ->
+                                    change.consume()  // Consume pointer event to enable drag
                                     cropEndX = change.position.x
                                     cropEndY = change.position.y
                                 },
@@ -536,10 +541,13 @@ private fun InteractiveOCRImage(
                                     val minY = kotlin.math.min(cropStartY, cropEndY)
                                     val maxY = kotlin.math.max(cropStartY, cropEndY)
 
-                                    val bitmapLeft = (minX - offsetX) / scale
-                                    val bitmapRight = (maxX - offsetX) / scale
-                                    val bitmapTop = (minY - offsetY) / scale
-                                    val bitmapBottom = (maxY - offsetY) / scale
+                                    // Clamp coordinates to image bounds
+                                    val bitmapLeft = ((minX - offsetX) / scale).coerceIn(0f, bitmapWidth)
+                                    val bitmapRight = ((maxX - offsetX) / scale).coerceIn(0f, bitmapWidth)
+                                    val bitmapTop = ((minY - offsetY) / scale).coerceIn(0f, bitmapHeight)
+                                    val bitmapBottom = ((maxY - offsetY) / scale).coerceIn(0f, bitmapHeight)
+
+                                    android.util.Log.d("ImportDraft", "Crop: canvas($minX,$minY - $maxX,$maxY) -> bitmap($bitmapLeft,$bitmapTop - $bitmapRight,$bitmapBottom)")
 
                                     onRectangleSelect(bitmapLeft, bitmapTop, bitmapRight, bitmapBottom)
                                 },
@@ -567,9 +575,9 @@ private fun InteractiveOCRImage(
             val offsetX = (canvasWidth - scaledWidth) / 2
             val offsetY = (canvasHeight - scaledHeight) / 2
 
-            // Initialize crop rectangle in CROP mode (covers 90% of image with margin)
+            // Initialize crop rectangle ONCE when first entering CROP mode
             if (selectionMode == com.jnkim.poschedule.ui.viewmodel.SelectionMode.CROP && !isCropInitialized) {
-                val margin = 0.05f // 5% margin on each side
+                val margin = 0.05f
                 cropStartX = offsetX + (scaledWidth * margin)
                 cropStartY = offsetY + (scaledHeight * margin)
                 cropEndX = offsetX + (scaledWidth * (1f - margin))

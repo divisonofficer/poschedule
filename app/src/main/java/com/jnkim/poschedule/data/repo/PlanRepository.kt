@@ -1,8 +1,11 @@
 package com.jnkim.poschedule.data.repo
 
 import com.jnkim.poschedule.data.local.dao.PlanDao
+import com.jnkim.poschedule.data.local.dao.PlanRichDataDao
 import com.jnkim.poschedule.data.local.entity.*
 import com.jnkim.poschedule.domain.model.Mode
+import com.jnkim.poschedule.ui.components.ContactInputState
+import com.jnkim.poschedule.ui.components.RichDataState
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import javax.inject.Inject
@@ -10,7 +13,8 @@ import javax.inject.Singleton
 
 @Singleton
 class PlanRepository @Inject constructor(
-    private val planDao: PlanDao
+    private val planDao: PlanDao,
+    private val richDataDao: PlanRichDataDao
 ) {
     // --- Instance Management ---
     fun getPlanItems(date: String): Flow<List<PlanItemEntity>> {
@@ -170,5 +174,111 @@ class PlanRepository @Inject constructor(
     suspend fun getNextPendingTask(date: String): PlanItemEntity? {
         val now = System.currentTimeMillis()
         return planDao.getNextPendingTask(date, now)
+    }
+
+    // --- Rich Data Management (Phase 2) ---
+
+    /**
+     * Save rich data for a plan item.
+     * Saves to normalized tables: plan_notes, plan_locations, plan_meetings, plan_contacts
+     *
+     * @param planId Plan item ID
+     * @param richData Rich data state containing notes, location, meeting, contacts, tags, color
+     */
+    suspend fun saveRichData(planId: String, richData: RichDataState) {
+        // Save notes (includes tags and color)
+        if (richData.notes.isNotBlank() || richData.tags.isNotBlank() || richData.colorTag != null) {
+            richDataDao.insertNote(
+                PlanNoteEntity(
+                    planId = planId,
+                    notes = richData.notes.takeIf { it.isNotBlank() },
+                    tags = richData.tags.takeIf { it.isNotBlank() },
+                    colorTag = richData.colorTag
+                )
+            )
+        }
+
+        // Save location
+        if (richData.locationText.isNotBlank()) {
+            richDataDao.insertLocation(
+                PlanLocationEntity(
+                    planId = planId,
+                    locationText = richData.locationText,
+                    mapQuery = richData.mapQuery.takeIf { it.isNotBlank() }
+                )
+            )
+        }
+
+        // Save meeting
+        if (richData.meetingUrl.isNotBlank() && richData.meetingType != null) {
+            richDataDao.insertMeeting(
+                PlanMeetingEntity(
+                    planId = planId,
+                    joinUrl = richData.meetingUrl,
+                    meetingType = richData.meetingType
+                )
+            )
+        }
+
+        // Save contacts
+        richData.contacts
+            .filter { it.name.isNotBlank() || it.email.isNotBlank() || it.phoneNumber.isNotBlank() }
+            .forEach { contact ->
+                richDataDao.insertContact(
+                    PlanContactEntity(
+                        id = contact.id,
+                        planId = planId,
+                        name = contact.name.takeIf { it.isNotBlank() },
+                        email = contact.email.takeIf { it.isNotBlank() },
+                        phoneNumber = contact.phoneNumber.takeIf { it.isNotBlank() },
+                        role = contact.role.takeIf { it.isNotBlank() }
+                    )
+                )
+            }
+    }
+
+    /**
+     * Load rich data for a plan item.
+     * Queries all rich data tables and returns a RichDataState object.
+     *
+     * @param planId Plan item ID
+     * @return RichDataState with loaded data, or empty state if no rich data exists
+     */
+    suspend fun loadRichData(planId: String): RichDataState {
+        val richData = richDataDao.getPlanWithRichData(planId) ?: return RichDataState()
+
+        return RichDataState(
+            notes = richData.note?.notes ?: "",
+            locationText = richData.location?.locationText ?: "",
+            mapQuery = richData.location?.mapQuery ?: "",
+            meetingUrl = richData.meeting?.joinUrl ?: "",
+            meetingType = richData.meeting?.meetingType,
+            contacts = richData.contacts.map {
+                ContactInputState(
+                    id = it.id,
+                    name = it.name ?: "",
+                    email = it.email ?: "",
+                    phoneNumber = it.phoneNumber ?: "",
+                    role = it.role ?: ""
+                )
+            },
+            tags = richData.note?.tags ?: "",
+            colorTag = richData.note?.colorTag
+        )
+    }
+
+    /**
+     * Update rich data for a plan item.
+     * Deletes existing rich data and saves new data.
+     *
+     * @param planId Plan item ID
+     * @param richData New rich data state
+     */
+    suspend fun updateRichData(planId: String, richData: RichDataState) {
+        // Delete existing rich data
+        richDataDao.deleteAllRichDataForPlan(planId)
+
+        // Save new data
+        saveRichData(planId, richData)
     }
 }

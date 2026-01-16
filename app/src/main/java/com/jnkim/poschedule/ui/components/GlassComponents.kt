@@ -1,7 +1,9 @@
 package com.jnkim.poschedule.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -22,10 +24,12 @@ import com.jnkim.poschedule.ui.theme.specularHighlight
  *
  * Enhanced with specular highlights for depth (top-left light, bottom-right dark strokes).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -35,11 +39,19 @@ fun GlassCard(
     val baseColor = colorScheme.surface.copy(alpha = DesignTokens.Alpha.glassDefault)
     val borderColor = colorScheme.outline.copy(alpha = DesignTokens.Alpha.borderDefault)
 
+    val finalModifier = if (onClick != null || onLongClick != null) {
+        modifier
+            .specularHighlight(cornerRadius = DesignTokens.Layer.surfaceRadius)
+            .combinedClickable(
+                onClick = onClick ?: {},
+                onLongClick = onLongClick
+            )
+    } else {
+        modifier.specularHighlight(cornerRadius = DesignTokens.Layer.surfaceRadius)
+    }
+
     Surface(
-        onClick = onClick ?: {},
-        enabled = onClick != null,
-        modifier = modifier
-            .specularHighlight(cornerRadius = DesignTokens.Layer.surfaceRadius),
+        modifier = finalModifier,
         color = baseColor,
         shape = RoundedCornerShape(DesignTokens.Layer.surfaceRadius),
         border = BorderStroke(1.dp, borderColor),
